@@ -902,8 +902,8 @@ int main()
         }
     }
 
-    vk::ApplicationInfo appInfo("TAA-App", VK_MAKE_VERSION(1, 0, 0),
-        "TAA-App", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_3);
+    vk::ApplicationInfo appInfo("RayTracer-App", VK_MAKE_VERSION(1, 0, 0),
+        "RayTracer-App", VK_MAKE_VERSION(1, 0, 0), VK_API_VERSION_1_3);
     vk::InstanceCreateInfo instanceCreateInfo({}, &appInfo, layersEnabled, extensionToEnable);
     context.instance = vk::createInstance(instanceCreateInfo);
 
@@ -970,7 +970,9 @@ int main()
     std::array<float, 1> priorities = { 1.0f };
     vk::DeviceQueueCreateInfo deviceQueueCreateInfo({}, context.queueIndex, priorities);
 
-    std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME };
+    std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME, 
+                            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME };
+    // VK_KHR_ray_tracing_pipeline_maintainence?
     vk::PhysicalDeviceDynamicRenderingFeatures dynamicFeature(true);
     vk::PhysicalDeviceFeatures2 physicalDeviceFeatures;
     physicalDeviceFeatures.features.fillModeNonSolid = true;
