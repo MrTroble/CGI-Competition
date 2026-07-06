@@ -170,7 +170,25 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     }
 
     std::cout << "Finished buffer loads" << std::endl;
+    RaytracingExtHolder extHolder;
+    const size_t deviceSizeOfAcc = 1000000;
+    {
+        vk::BufferCreateFlags localFlags = {};
+        const auto bufferUsage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
+        vk::BufferCreateInfo createInfo(localFlags, deviceSizeOfAcc, bufferUsage, vk::SharingMode::eExclusive, queueIndexes);
+        const auto vbuffer = context.device.createBuffer(createInfo);
+        const auto bufferRequ = context.device.getBufferMemoryRequirements(vbuffer);
 
+        vk::MemoryAllocateInfo allocInfo(bufferRequ.size, context.deviceLocalOnly);
+        const auto memory =  context.device.allocateMemory(allocInfo);
+        context.device.bindBufferMemory(vbuffer, memory, 0);
+        extHolder.buffer = vbuffer;
+    }
+    vk::AccelerationStructureCreateInfoKHR accelerationCreateInfo(vk::AccelerationStructureCreateFlagBitsKHR::eDeviceAddressCaptureReplay,
+            extHolder.buffer, 0, deviceSizeOfAcc, vk::AccelerationStructureTypeKHR::eBottomLevel);
+    extHolder.accelerationDataStructure = context.device.createAccelerationStructureKHR(accelerationCreateInfo, nullptr, context.dynamicLoader);
+
+    context.raytraceExt = extHolder;
     const auto usageFlagsImage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
     vk::MemoryAllocateInfo memoryAlloc(0u, context.deviceLocalOnly);
 

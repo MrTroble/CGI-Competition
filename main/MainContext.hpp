@@ -77,6 +77,12 @@ struct ShadowMapContext {
 	vk::DeviceMemory shadowMapMatrices;
 };
 
+struct RaytracingExtHolder {
+	vk::Buffer buffer;
+	vk::DeviceMemory memory;
+	vk::AccelerationStructureKHR accelerationDataStructure;
+};
+
 struct MainContext {
 	vk::Instance instance;
 	vk::Device device;
@@ -98,6 +104,8 @@ struct MainContext {
 	vk::Semaphore signalSemaphore;
 	vk::Fence fence;
 	vk::DescriptorPool descriptorPool;
+	vk::detail::DispatchLoaderDynamic dynamicLoader;
+	RaytracingExtHolder raytraceExt;
 
 	vk::DescriptorSetLayout modelLayout = nullptr;
 	vk::DescriptorSetLayout cameraLayout = nullptr;

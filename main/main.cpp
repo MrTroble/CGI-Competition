@@ -976,11 +976,18 @@ int main()
     vk::PhysicalDeviceDynamicRenderingFeatures dynamicFeature(true);
     vk::PhysicalDeviceFeatures2 physicalDeviceFeatures;
     physicalDeviceFeatures.features.fillModeNonSolid = true;
+    vk::PhysicalDeviceAccelerationStructureFeaturesKHR accelFeaturesInfo;
+    accelFeaturesInfo.accelerationStructure = true;
+    accelFeaturesInfo.accelerationStructureCaptureReplay = true;
+    accelFeaturesInfo.descriptorBindingAccelerationStructureUpdateAfterBind = true;
+    dynamicFeature.pNext = &accelFeaturesInfo;
     physicalDeviceFeatures.pNext = &dynamicFeature;
     vk::DeviceCreateInfo deviceCreateInfo({}, deviceQueueCreateInfo, {}, deviceExtensions);
     deviceCreateInfo.pNext = &physicalDeviceFeatures;
     context.device = context.usedPhyDevice.createDevice(deviceCreateInfo);
     std::cout << "Device created" << std::endl;
+
+    context.dynamicLoader = vk::detail::DispatchLoaderDynamic(context.instance, vkGetInstanceProcAddr, context.device, vkGetDeviceProcAddr);
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
 
