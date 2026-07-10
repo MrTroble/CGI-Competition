@@ -78,9 +78,10 @@ struct ShadowMapContext {
 };
 
 struct RaytracingExtHolder {
-	vk::Buffer buffer;
-	vk::DeviceMemory memory;
-	vk::AccelerationStructureKHR accelerationDataStructure;
+	vk::Buffer buffer[2];
+	vk::Buffer scratch[2];
+	std::vector<vk::DeviceMemory> memory;
+	vk::AccelerationStructureKHR accelerationStructures[2];
 };
 
 struct MainContext {

@@ -146,7 +146,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     }
 
     constexpr vk::BufferUsageFlags usageFlags = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer
-        | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+        | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR;
     const std::array queueIndexes = { context.queueIndex };
 
     for (auto& buffer : model.bufferViews)
@@ -174,7 +174,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     const auto usageFlagsImage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
     vk::MemoryAllocateInfo memoryAlloc(0u, context.deviceLocalOnly);
 
-    vk::CommandPoolCreateInfo poolCreateInfo({}, context.queueIndex);
+    vk::CommandPoolCreateInfo poolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, context.queueIndex);
     const auto pool = context.device.createCommandPool(poolCreateInfo);
     vk::CommandBufferAllocateInfo allocateInfo(pool, vk::CommandBufferLevel::ePrimary, 1);
     const auto cmd = context.device.allocateCommandBuffers(allocateInfo).back();
@@ -284,7 +284,9 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     const auto transformMatrix = glm::scale(glm::translate(glm::mat4(1.0f), config.position), glm::vec3(config.scale));
     std::vector<PerNodeData> nodeMatrix(model.nodes.size(), { transformMatrix });
     std::vector<vk::AccelerationStructureGeometryKHR> geometryData;
+    std::vector<vk::AccelerationStructureGeometryKHR> instanceBasedData;
     std::vector<uint32_t> maxPrimitive;
+    std::vector<vk::AccelerationStructureBuildRangeInfoKHR> structureBuildRange;
     size_t perNodeId = 0;
     for (auto& node : model.nodes) {
         PerNodeData& nodeData = nodeMatrix[perNodeId++];
@@ -299,7 +301,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
                 vk::AccelerationStructureGeometryKHR currentData;
                 const auto& indexAccess = model.accessors[primitive.indices];
                 currentData.geometry.triangles.indexType = (indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
-                const auto addressIndex = context.device.getBufferAddress({out.buffers[indexAccess.bufferView]}, context.dynamicLoader);
+                const auto addressIndex = context.device.getBufferAddress({ out.buffers[indexAccess.bufferView] }, context.dynamicLoader);
                 currentData.geometry.triangles.indexData.deviceAddress = addressIndex;
                 currentData.geometry.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
                 const auto [posId, posOff] = getFromInput(model, primitive, "POSITION");
@@ -307,20 +309,30 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
                 currentData.geometry.triangles.vertexData = addressVertex + posOff;
                 currentData.geometry.triangles.vertexStride = sizeof(glm::vec3);
                 currentData.geometry.triangles.maxVertex = indexAccess.count - 1;
-                const auto primitiveSize = indexAccess.count / 3;
+                const uint32_t primitiveSize = (uint32_t)indexAccess.count / 3;
                 geometryData.push_back(currentData);
                 maxPrimitive.push_back(primitiveSize);
+                vk::AccelerationStructureBuildRangeInfoKHR primitveRanges{ primitiveSize, 0, 0, 0 };
+                structureBuildRange.push_back(primitveRanges);
             }
         }
     }
 
     RaytracingExtHolder extHolder;
 
-    vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo(vk::AccelerationStructureTypeKHR::eBottomLevel);
-    geometryInfo.setGeometries(geometryData);
-    const auto buildSizeInfo = context.device.getAccelerationStructureBuildSizesKHR(
-        vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, maxPrimitive, context.dynamicLoader);
-    {
+    std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> geometryInfo = {
+        vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eBottomLevel}
+        //,vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eTopLevel} 
+    };
+    std::array<vk::AccelerationStructureBuildRangeInfoKHR*, 1> buildRanges;
+    buildRanges[0] = structureBuildRange.data();
+    geometryInfo[0].setGeometries(geometryData);
+    size_t indexLocal = 0;
+    for (const auto& buildGeo : geometryInfo) {
+        geometryInfo[indexLocal].mode = vk::BuildAccelerationStructureModeKHR::eBuild;
+        geometryInfo[indexLocal].flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+        const auto buildSizeInfo = context.device.getAccelerationStructureBuildSizesKHR(
+            vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo[indexLocal], maxPrimitive, context.dynamicLoader);
         vk::BufferCreateFlags localFlags = {};
         const auto bufferUsage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
         vk::BufferCreateInfo createInfo(localFlags, buildSizeInfo.accelerationStructureSize, bufferUsage, vk::SharingMode::eExclusive, queueIndexes);
@@ -330,11 +342,43 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
         vk::MemoryAllocateInfo allocInfo(bufferRequ.size, context.deviceLocalOnly);
         const auto memory = context.device.allocateMemory(allocInfo);
         context.device.bindBufferMemory(vbuffer, memory, 0);
-        extHolder.buffer = vbuffer;
+
+        vk::MemoryAllocateFlagsInfo flagInfo(vk::MemoryAllocateFlagBits::eDeviceAddress);
+        allocInfo.pNext = &flagInfo;
+        createInfo.usage = vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer;
+        createInfo.setSize(buildSizeInfo.buildScratchSize);
+        const auto scratchbuffer = context.device.createBuffer(createInfo);
+        const auto scratchbufferRequ = context.device.getBufferMemoryRequirements(vbuffer);
+
+        allocInfo.allocationSize = scratchbufferRequ.size;
+        const auto memoryScratch = context.device.allocateMemory(allocInfo);
+        context.device.bindBufferMemory(scratchbuffer, memoryScratch, 0);
+        extHolder.scratch[indexLocal] = scratchbuffer;
+        extHolder.memory.push_back(memoryScratch);
+        extHolder.memory.push_back(memory);
+
+        extHolder.buffer[indexLocal] = vbuffer;
+
+        vk::AccelerationStructureCreateInfoKHR accelerationCreateInfo(vk::AccelerationStructureCreateFlagBitsKHR::eDeviceAddressCaptureReplay,
+            vbuffer, 0, buildSizeInfo.accelerationStructureSize, geometryInfo[indexLocal].type);
+        const auto dataStructure = context.device.createAccelerationStructureKHR(accelerationCreateInfo, nullptr, context.dynamicLoader);
+        geometryInfo[indexLocal].dstAccelerationStructure = dataStructure;
+        geometryInfo[indexLocal].scratchData = context.device.getBufferAddress({ scratchbuffer }, context.dynamicLoader);
+        extHolder.accelerationStructures[indexLocal] = dataStructure;
+        indexLocal++;
     }
-    vk::AccelerationStructureCreateInfoKHR accelerationCreateInfo(vk::AccelerationStructureCreateFlagBitsKHR::eDeviceAddressCaptureReplay,
-        extHolder.buffer, 0, buildSizeInfo.accelerationStructureSize, vk::AccelerationStructureTypeKHR::eBottomLevel);
-    extHolder.accelerationDataStructure = context.device.createAccelerationStructureKHR(accelerationCreateInfo, nullptr, context.dynamicLoader);
+
+    context.device.waitForFences(context.fence, true, UINT64_MAX);
+    context.device.resetFences(context.fence);
+    cmd.reset();
+
+    vk::CommandBufferBeginInfo beginInfoTwo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+    cmd.begin(beginInfoTwo);
+
+    cmd.buildAccelerationStructuresKHR(geometryInfo, buildRanges, context.dynamicLoader);
+
+    cmd.end();
+    context.queue.submit(submitInfo, context.fence);
 
     out.rayHolder = extHolder;
     std::cout << "Finished loading Ray ext!" << std::endl;
