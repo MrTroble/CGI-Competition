@@ -146,7 +146,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     }
 
     constexpr vk::BufferUsageFlags usageFlags = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eVertexBuffer
-        | vk::BufferUsageFlagBits::eTransferSrc;
+        | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eShaderDeviceAddress;
     const std::array queueIndexes = { context.queueIndex };
 
     for (auto& buffer : model.bufferViews)
@@ -170,25 +170,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     }
 
     std::cout << "Finished buffer loads" << std::endl;
-    RaytracingExtHolder extHolder;
-    const size_t deviceSizeOfAcc = 1000000;
-    {
-        vk::BufferCreateFlags localFlags = {};
-        const auto bufferUsage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
-        vk::BufferCreateInfo createInfo(localFlags, deviceSizeOfAcc, bufferUsage, vk::SharingMode::eExclusive, queueIndexes);
-        const auto vbuffer = context.device.createBuffer(createInfo);
-        const auto bufferRequ = context.device.getBufferMemoryRequirements(vbuffer);
 
-        vk::MemoryAllocateInfo allocInfo(bufferRequ.size, context.deviceLocalOnly);
-        const auto memory =  context.device.allocateMemory(allocInfo);
-        context.device.bindBufferMemory(vbuffer, memory, 0);
-        extHolder.buffer = vbuffer;
-    }
-    vk::AccelerationStructureCreateInfoKHR accelerationCreateInfo(vk::AccelerationStructureCreateFlagBitsKHR::eDeviceAddressCaptureReplay,
-            extHolder.buffer, 0, deviceSizeOfAcc, vk::AccelerationStructureTypeKHR::eBottomLevel);
-    extHolder.accelerationDataStructure = context.device.createAccelerationStructureKHR(accelerationCreateInfo, nullptr, context.dynamicLoader);
-
-    context.raytraceExt = extHolder;
     const auto usageFlagsImage = vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst;
     vk::MemoryAllocateInfo memoryAlloc(0u, context.deviceLocalOnly);
 
@@ -301,6 +283,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 
     const auto transformMatrix = glm::scale(glm::translate(glm::mat4(1.0f), config.position), glm::vec3(config.scale));
     std::vector<PerNodeData> nodeMatrix(model.nodes.size(), { transformMatrix });
+    std::vector<vk::AccelerationStructureGeometryKHR> geometryData;
     size_t perNodeId = 0;
     for (auto& node : model.nodes) {
         PerNodeData& nodeData = nodeMatrix[perNodeId++];
@@ -309,7 +292,48 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
             nodeMatrix[childID].mvp = nodeData.mvp;
         }
         nodeData.previousViewMatrix = glm::transpose(glm::inverse(nodeData.mvp));
+        if (node.mesh >= 0) {
+            auto& mesh = model.meshes[node.mesh];
+            for (auto& primitive : mesh.primitives) {
+                vk::AccelerationStructureGeometryKHR currentData;
+                const auto& indexAccess = model.accessors[primitive.indices];
+                currentData.geometry.triangles.indexType = (indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
+                const auto addressIndex = context.device.getBufferAddress({out.buffers[indexAccess.bufferView]}, context.dynamicLoader);
+                currentData.geometry.triangles.indexData.deviceAddress = addressIndex;
+                currentData.geometry.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
+                const auto [posId, posOff] = getFromInput(model, primitive, "POSITION");
+                const auto addressVertex = context.device.getBufferAddress({ out.buffers[posId] }, context.dynamicLoader);
+                currentData.geometry.triangles.vertexData = addressVertex + posOff;
+                currentData.geometry.triangles.vertexStride = sizeof(glm::vec3);
+                geometryData.push_back(currentData);
+            }
+        }
     }
+
+    RaytracingExtHolder extHolder;
+
+    vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo(vk::AccelerationStructureTypeKHR::eBottomLevel);
+    geometryInfo.setGeometries(geometryData);
+    const auto buildSizeInfo = context.device.getAccelerationStructureBuildSizesKHR(
+        vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, {}, context.dynamicLoader);
+    {
+        vk::BufferCreateFlags localFlags = {};
+        const auto bufferUsage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
+        vk::BufferCreateInfo createInfo(localFlags, buildSizeInfo.accelerationStructureSize, bufferUsage, vk::SharingMode::eExclusive, queueIndexes);
+        const auto vbuffer = context.device.createBuffer(createInfo);
+        const auto bufferRequ = context.device.getBufferMemoryRequirements(vbuffer);
+
+        vk::MemoryAllocateInfo allocInfo(bufferRequ.size, context.deviceLocalOnly);
+        const auto memory = context.device.allocateMemory(allocInfo);
+        context.device.bindBufferMemory(vbuffer, memory, 0);
+        extHolder.buffer = vbuffer;
+    }
+    vk::AccelerationStructureCreateInfoKHR accelerationCreateInfo(vk::AccelerationStructureCreateFlagBitsKHR::eDeviceAddressCaptureReplay,
+        extHolder.buffer, 0, buildSizeInfo.accelerationStructureSize, vk::AccelerationStructureTypeKHR::eBottomLevel);
+    extHolder.accelerationDataStructure = context.device.createAccelerationStructureKHR(accelerationCreateInfo, nullptr, context.dynamicLoader);
+
+    out.rayHolder = extHolder;
+    std::cout << "Finished loading Ray ext!" << std::endl;
 
     out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout);
 
@@ -359,9 +383,9 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
         inharitance.setFramebuffer(framebuffer);
         cCmd.begin(cmdBeginInfo);
         size_t cNodeID = 0;
-        for (auto node : model.nodes) {
+        for (auto& node : model.nodes) {
             if (node.mesh < 0) continue;
-            auto mesh = model.meshes[node.mesh];
+            auto& mesh = model.meshes[node.mesh];
             const auto currentModelDesc = out.modelBuffer.descriptors[cNodeID++];
 
             for (auto& primitive : mesh.primitives) {

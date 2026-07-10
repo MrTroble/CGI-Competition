@@ -12,6 +12,8 @@ inline void updateMemory(MainContext& context, vk::DeviceMemory memory, std::spa
 
 inline vk::DeviceMemory loadToMemory(MainContext& context, std::span<const uint8_t> values, const vk::MemoryRequirements& memoryReq) {
 	vk::MemoryAllocateInfo memoryAlloc(memoryReq.size, context.hostVisibleOnly != UINT32_MAX ? context.hostVisibleOnly:context.hostVisibleDeviceLocalMemory);
+	vk::MemoryAllocateFlagsInfo memAllocInfo(vk::MemoryAllocateFlagBits::eDeviceAddress);
+	memoryAlloc.pNext = memAllocInfo;
 	const auto memory = context.device.allocateMemory(memoryAlloc);
 	updateMemory(context, memory, values);
 	return memory;

@@ -976,12 +976,16 @@ int main()
     vk::PhysicalDeviceDynamicRenderingFeatures dynamicFeature(true);
     vk::PhysicalDeviceFeatures2 physicalDeviceFeatures;
     physicalDeviceFeatures.features.fillModeNonSolid = true;
+    vk::PhysicalDeviceBufferDeviceAddressFeatures addressFeature;
+    addressFeature.bufferDeviceAddress = true;
+    addressFeature.bufferDeviceAddressCaptureReplay = true;
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR accelFeaturesInfo;
     accelFeaturesInfo.accelerationStructure = true;
     accelFeaturesInfo.accelerationStructureCaptureReplay = true;
     accelFeaturesInfo.descriptorBindingAccelerationStructureUpdateAfterBind = true;
     dynamicFeature.pNext = &accelFeaturesInfo;
     physicalDeviceFeatures.pNext = &dynamicFeature;
+    accelFeaturesInfo.pNext = &addressFeature;
     vk::DeviceCreateInfo deviceCreateInfo({}, deviceQueueCreateInfo, {}, deviceExtensions);
     deviceCreateInfo.pNext = &physicalDeviceFeatures;
     context.device = context.usedPhyDevice.createDevice(deviceCreateInfo);

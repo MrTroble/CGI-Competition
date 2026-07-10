@@ -21,6 +21,8 @@ struct OutputModel {
 	ArrayBuffer modelBuffer;
 
 	tinygltf::Model backupModel;
+
+	RaytracingExtHolder rayHolder;
 };
 
 struct ModelConfig {
