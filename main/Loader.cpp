@@ -284,6 +284,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     const auto transformMatrix = glm::scale(glm::translate(glm::mat4(1.0f), config.position), glm::vec3(config.scale));
     std::vector<PerNodeData> nodeMatrix(model.nodes.size(), { transformMatrix });
     std::vector<vk::AccelerationStructureGeometryKHR> geometryData;
+    std::vector<uint32_t> maxPrimitive;
     size_t perNodeId = 0;
     for (auto& node : model.nodes) {
         PerNodeData& nodeData = nodeMatrix[perNodeId++];
@@ -305,7 +306,10 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
                 const auto addressVertex = context.device.getBufferAddress({ out.buffers[posId] }, context.dynamicLoader);
                 currentData.geometry.triangles.vertexData = addressVertex + posOff;
                 currentData.geometry.triangles.vertexStride = sizeof(glm::vec3);
+                currentData.geometry.triangles.maxVertex = indexAccess.count - 1;
+                const auto primitiveSize = indexAccess.count / 3;
                 geometryData.push_back(currentData);
+                maxPrimitive.push_back(primitiveSize);
             }
         }
     }
@@ -315,7 +319,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     vk::AccelerationStructureBuildGeometryInfoKHR geometryInfo(vk::AccelerationStructureTypeKHR::eBottomLevel);
     geometryInfo.setGeometries(geometryData);
     const auto buildSizeInfo = context.device.getAccelerationStructureBuildSizesKHR(
-        vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, {}, context.dynamicLoader);
+        vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo, maxPrimitive, context.dynamicLoader);
     {
         vk::BufferCreateFlags localFlags = {};
         const auto bufferUsage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
