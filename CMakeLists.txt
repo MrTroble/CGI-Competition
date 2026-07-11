@@ -13,7 +13,7 @@ find_package(Vulkan 1.4 REQUIRED COMPONENTS glslang shaderc_combined SPIRV-Tools
 message(${Vulkan_GLSLC_EXECUTABLE})
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/shader")
-file(GLOB files "shader/*.vert" "shader/*.frag")
+file(GLOB files "shader/*.vert" "shader/*.frag" "shader/*.rchit" "shader/*.rmiss" "shader/*.rgen")
 list(APPEND PERMUTATION_SHADER "USE_ALBEDO" "USE_ALB_NORM")
 foreach(file ${files})
   cmake_path(GET file FILENAME filename)
