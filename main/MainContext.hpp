@@ -18,7 +18,7 @@ namespace fs = std::filesystem;
 struct LightList {
 	uint32_t ids[NUMBER_OF_LIGHTS];
 	uint32_t amount;
-	uint32_t pad1[15] = {0};
+	uint32_t pad1[15] = { 0 };
 };
 
 struct PerNodeData {
@@ -118,6 +118,7 @@ struct MainContext {
 	uint32_t hostVisibleDeviceLocalMemory = UINT32_MAX;
 
 	std::vector<vk::ShaderModule> shaderModules;
+	std::vector<vk::ShaderModule> shaderModulesRaytracing;
 
 	PerNodeData cameraNodeData;
 	glm::mat4 view;
@@ -188,6 +189,15 @@ inline vk::PipelineShaderStageCreateInfo loadShaderStages(MainContext& context, 
 	vk::ShaderStageFlagBits shaderStage = vk::ShaderStageFlagBits::eVertex;
 	if (path.ends_with(".frag.spv")) {
 		shaderStage = vk::ShaderStageFlagBits::eFragment;
+	}
+	else if (path.ends_with(".rchit.spv")) {
+		shaderStage = vk::ShaderStageFlagBits::eClosestHitKHR;
+	}
+	else if (path.ends_with(".rmiss.spv")) {
+		shaderStage = vk::ShaderStageFlagBits::eMissKHR;
+	}
+	else if (path.ends_with(".rgen.spv")) {
+		shaderStage = vk::ShaderStageFlagBits::eRaygenKHR;
 	}
 	const auto file = loadFile(path);
 	if (file.empty()) {
