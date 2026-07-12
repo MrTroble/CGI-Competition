@@ -295,6 +295,9 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			nodeMatrix[childID].mvp = nodeData.mvp;
 		}
 		nodeData.previousViewMatrix = glm::transpose(glm::inverse(nodeData.mvp));
+	}
+	out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout);
+	for (auto& node : model.nodes) {
 		if (node.mesh >= 0) {
 			auto& mesh = model.meshes[node.mesh];
 			for (auto& primitive : mesh.primitives) {
@@ -317,13 +320,11 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			}
 		}
 	}
-	out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout);
-
 	RaytracingExtHolder extHolder;
 
 	std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> geometryInfo = {
 		vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eBottomLevel}
-	   //,vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eTopLevel} 
+		//,vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eTopLevel} 
 	};
 	std::array<vk::AccelerationStructureBuildRangeInfoKHR*, 1> buildRanges;
 	buildRanges[0] = structureBuildRange.data();
