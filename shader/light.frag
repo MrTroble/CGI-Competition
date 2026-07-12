@@ -18,6 +18,8 @@ layout(binding=0, set=1) uniform CAMERA {
 	mat4 mvp;
 	mat4 previousViewMatrix;
 	mat4 inversVP;
+	mat4 _u1;
+	mat4 _u2;
 	vec4 windowSize;
 } camera;
 

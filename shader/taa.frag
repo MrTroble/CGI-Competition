@@ -4,6 +4,8 @@ layout(binding=0, set=1) uniform CAMERA {
 	mat4 mvp;
 	mat4 oldViewMatrix;
 	mat4 inversMV;
+	mat4 _u1;
+	mat4 _u2;
 	vec4 windowSize;
 } camera;
 

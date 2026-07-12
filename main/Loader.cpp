@@ -295,9 +295,16 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			nodeMatrix[childID].mvp = nodeData.mvp;
 		}
 		nodeData.previousViewMatrix = glm::transpose(glm::inverse(nodeData.mvp));
+		nodeData.inverseVP = glm::transpose(nodeData.mvp);
 	}
-	out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout);
+	out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout, vk::BufferUsageFlagBits::eStorageBuffer 
+		| vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR);
+	const auto modelDataAdd = context.device.getBufferAddress({ out.modelBuffer.buffer }, context.dynamicLoader);
+
+	perNodeId = 0;
 	for (auto& node : model.nodes) {
+		const auto currentModel = sizeof(glm::mat4) * 2 + modelDataAdd + perNodeId * sizeof(PerNodeData);
+		perNodeId++;
 		if (node.mesh >= 0) {
 			auto& mesh = model.meshes[node.mesh];
 			for (auto& primitive : mesh.primitives) {
@@ -312,6 +319,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 				currentData.geometry.triangles.vertexData = addressVertex + posOff;
 				currentData.geometry.triangles.vertexStride = sizeof(glm::vec3);
 				currentData.geometry.triangles.maxVertex = indexAccess.count - 1;
+				currentData.geometry.triangles.transformData = currentModel;
 				const uint32_t primitiveSize = (uint32_t)indexAccess.count / 3;
 				geometryData.push_back(currentData);
 				maxPrimitive.push_back(primitiveSize);

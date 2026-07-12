@@ -32,8 +32,8 @@ inline void notifyViewMatrixChanged(MainContext& context, bool applyJitter = tru
 
     // Apply jitter to view matrix
     auto jitteredViewMatrix = context.trackball.view;
-    if (applyJitter) {
-        jitteredViewMatrix = glm::translate(jitteredViewMatrix, jitter * 0.005f);
+    if (context.settings.useTAA) {
+        jitteredViewMatrix = glm::translate(jitteredViewMatrix, jitter * 0.0001f);
     }
     context.cameraNodeData.mvp =
         perspective * jitteredViewMatrix;
@@ -41,8 +41,11 @@ inline void notifyViewMatrixChanged(MainContext& context, bool applyJitter = tru
     context.cameraNodeData.previousViewMatrix = perspective * context.previousViewMatrix;
     context.previousViewMatrix = jitteredViewMatrix;
 
+    context.cameraNodeData.invView = glm::inverse(jitteredViewMatrix);
+    context.cameraNodeData.invProj = glm::inverse(perspective);
+
     context.cameraNodeData.inverseVP = glm::inverse(context.cameraNodeData.mvp);
-    updateMemory(context, context.cameraNode.memory, std::span{ (uint8_t*)&context.cameraNodeData, sizeof(PerNodeData) });
+    updateMemory(context, context.cameraNode.memory, std::span{ (uint8_t*)&context.cameraNodeData, sizeof(context.cameraNodeData) });
 }
 
 inline void createSwapchain(MainContext& context) {
@@ -115,8 +118,8 @@ inline void createSwapchain(MainContext& context) {
     context.albedoView = albedoImageView;
 
     {   // Resolve attachments
-        albedoCreateInfo.usage |= vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage 
-                               | vk::ImageUsageFlagBits::eTransferSrc;
+        albedoCreateInfo.usage |= vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage
+            | vk::ImageUsageFlagBits::eTransferSrc;
         context.resolve1Image = context.device.createImage(albedoCreateInfo);
         context.resolve2Image = context.device.createImage(albedoCreateInfo);
         const auto resolve1ImgRequ = context.device.getImageMemoryRequirements(context.resolve1Image);
@@ -369,7 +372,7 @@ void updateRayImageSet(MainContext& context) {
         vk::WriteDescriptorSet writeAS{};
         writeAS.dstBinding = 0;
         writeAS.descriptorType = vk::DescriptorType::eStorageImage;
-        vk::DescriptorImageInfo imageInfo{ {}, zahl == 0 ? context.resolveView2:context.resolveView, vk::ImageLayout::eGeneral };
+        vk::DescriptorImageInfo imageInfo{ {}, zahl == 0 ? context.resolveView2 : context.resolveView, vk::ImageLayout::eGeneral };
         writeAS.setDstSet(imageSet);
         writeAS.setImageInfo(imageInfo);
         context.device.updateDescriptorSets(writeAS, {});
@@ -467,20 +470,25 @@ inline void createRaytracingPipeline(MainContext& context) {
         loadShaderStages(context, "closesthit.rchit.spv")
     };
 
-    std::array<vk::DescriptorSetLayoutBinding, 2> bindings{};
+    std::array<vk::DescriptorSetLayoutBinding, 3> bindings{};
     bindings[0].binding = 0;
     bindings[0].descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
     bindings[0].descriptorCount = 1;
     bindings[0].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-    bindings[1].binding = 0;
-    bindings[1].descriptorType = vk::DescriptorType::eStorageImage;
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = vk::DescriptorType::eUniformBuffer;
     bindings[1].descriptorCount = 1;
     bindings[1].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-    vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, bindings[0] };
+    bindings[2].binding = 0;
+    bindings[2].descriptorType = vk::DescriptorType::eStorageImage;
+    bindings[2].descriptorCount = 1;
+    bindings[2].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
+
+    vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, 2, bindings.data() };
     context.raytraceExt.descLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
-    desriptorLayoutInfo.setBindings(bindings[1]);
+    desriptorLayoutInfo.setBindings(bindings[2]);
     context.raytraceExt.descImageLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
 
     std::array descriptorLayoutsLocal = { context.raytraceExt.descImageLayout, context.raytraceExt.descLayout };
@@ -516,12 +524,16 @@ inline void createRaytracingPipeline(MainContext& context) {
     };
 
     constexpr size_t MAX_POOL = 100;
-    vk::DescriptorPoolSize accelPool{
+
+    std::array mainPoolInfos = { vk::DescriptorPoolSize{
         vk::DescriptorType::eAccelerationStructureKHR,
         MAX_POOL
-    };
+    }, vk::DescriptorPoolSize{
+        vk::DescriptorType::eUniformBuffer,
+        MAX_POOL
+    } };
 
-    vk::DescriptorPoolCreateInfo poolInfo{ {}, MAX_POOL, accelPool };
+    vk::DescriptorPoolCreateInfo poolInfo{ {}, MAX_POOL, mainPoolInfos };
     context.raytraceExt.pool = context.device.createDescriptorPool(poolInfo);
 
     vk::DescriptorPoolCreateInfo poolInfoImage{ {}, imagePoolSize.descriptorCount, imagePoolSize };
@@ -566,7 +578,6 @@ inline void createRaytracingPipeline(MainContext& context) {
     sbtBufferInfo.size = sbtSize;
     sbtBufferInfo.usage = usage;
     sbtBufferInfo.sharingMode = vk::SharingMode::eExclusive;
-
 
     vk::Buffer sbtBuffer = context.device.createBuffer(sbtBufferInfo);
     vk::MemoryRequirements memReq = context.device.getBufferMemoryRequirements(sbtBuffer);
@@ -692,7 +703,12 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     writeAS.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
     writeAS.pNext = &asInfo;
     writeAS.setDstSet(context.raytraceExt.topLevelDescSet);
+    context.device.updateDescriptorSets(writeAS, {});
 
+    vk::DescriptorBufferInfo bufferInfo(context.cameraNode.buffer, 0, sizeof(PerNodeData));
+    writeAS.setBufferInfo(bufferInfo);
+    writeAS.dstBinding = 1;
+    writeAS.descriptorType = vk::DescriptorType::eUniformBuffer;
     context.device.updateDescriptorSets(writeAS, {});
 }
 

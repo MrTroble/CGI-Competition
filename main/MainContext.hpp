@@ -30,6 +30,17 @@ struct PerNodeData {
 	// TODO: add more things here
 };
 
+struct CameraData {
+	glm::mat4 mvp;
+	glm::mat4 previousViewMatrix;
+	glm::mat4 inverseVP;
+	glm::mat4 invView;
+	glm::mat4 invProj;
+	glm::vec4 windowParameter;
+	std::uint8_t padding[176];
+	// TODO: add more things here
+};
+
 struct MaterialPushConst {
 	uint32_t materialID;
 	float alphaCutoff;
@@ -142,7 +153,7 @@ struct MainContext {
 	std::vector<vk::ShaderModule> shaderModules;
 	std::vector<vk::ShaderModule> shaderModulesRaytracing;
 
-	PerNodeData cameraNodeData;
+	CameraData cameraNodeData;
 	glm::mat4 view;
 	ArrayBuffer cameraNode;
 
