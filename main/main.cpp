@@ -557,21 +557,18 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 	context.device.unmapMemory(instanceMemory);
 	vk::DeviceAddress instanceAddress = context.device.getBufferAddress({ instanceBuffer }, context.dynamicLoader);
 
-	std::vector<vk::AccelerationStructureGeometryKHR> tlasGeometry(outModels.size());
-	size_t currentIndexGeo = 0;
-	for (auto& geometry : tlasGeometry) {
-		geometry.geometryType = vk::GeometryTypeKHR::eInstances;
-		geometry.geometry.instances.arrayOfPointers = false;
-		geometry.geometry.instances.data = instanceAddress + currentIndexGeo * sizeof(vk::AccelerationStructureInstanceKHR);
-	}
-	vk::AccelerationStructureBuildGeometryInfoKHR tlasBuildInfo{};
-	tlasBuildInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
-	tlasBuildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
-	tlasBuildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
-	tlasBuildInfo.setGeometries(tlasGeometry);
+    vk::AccelerationStructureGeometryKHR tlasGeometry{};
+    tlasGeometry.geometryType = vk::GeometryTypeKHR::eInstances;
+    tlasGeometry.geometry.instances = { false, instanceAddress };
+            
+    vk::AccelerationStructureBuildGeometryInfoKHR tlasBuildInfo{};
+    tlasBuildInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
+    tlasBuildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+    tlasBuildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
+    tlasBuildInfo.setGeometries(tlasGeometry);
 
-	std::vector<uint32_t> maxAmounts(tlasBuildInfo.geometryCount, 1);
-	auto tlasSize = context.device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, tlasBuildInfo, maxAmounts, context.dynamicLoader);
+    uint32_t maxAmounts = outModels.size();
+    auto tlasSize = context.device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, tlasBuildInfo, maxAmounts, context.dynamicLoader);
 
 	vk::BufferCreateInfo tlasBufferInfo{};
 	tlasBufferInfo.size = tlasSize.accelerationStructureSize;
@@ -619,11 +616,12 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 	vk::WriteDescriptorSetAccelerationStructureKHR asInfo{};
 	asInfo.setAccelerationStructures(context.raytraceExt.topLevelStructure);
 
-	vk::WriteDescriptorSet writeAS{};
-	writeAS.dstBinding = 0;
-	writeAS.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
-	writeAS.pNext = &asInfo;
-	writeAS.setDstSet(context.raytraceExt.topLevelDescSet);
+    vk::WriteDescriptorSet writeAS{};
+    writeAS.dstBinding = 0;
+    writeAS.descriptorCount = 1;
+    writeAS.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
+    writeAS.pNext = &asInfo;
+    writeAS.setDstSet(context.raytraceExt.topLevelDescSet);
 
 	context.device.updateDescriptorSets(writeAS, {});
 }
@@ -1112,15 +1110,15 @@ int main()
 
 
 
-	const vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMsgCreateInfo(
-		{},
-		(vk::DebugUtilsMessageSeverityFlagsEXT)
-		vk::FlagTraits<vk::DebugUtilsMessageSeverityFlagBitsEXT>::allFlags,
-		(vk::DebugUtilsMessageTypeFlagsEXT)
-		vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral,
-		(PFN_vkDebugUtilsMessengerCallbackEXT)debugMessage);
-	const auto dynamicLoader = vk::detail::DispatchLoaderDynamic(context.instance, vkGetInstanceProcAddr);
-	//const auto messenger = context.instance.createDebugUtilsMessengerEXTUnique(debugUtilsMsgCreateInfo, nullptr, dynamicLoader);
+    const vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMsgCreateInfo(
+        {},
+        (vk::DebugUtilsMessageSeverityFlagsEXT)
+        vk::FlagTraits<vk::DebugUtilsMessageSeverityFlagBitsEXT>::allFlags,
+        (vk::DebugUtilsMessageTypeFlagsEXT)
+        vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation | vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral,
+        (PFN_vkDebugUtilsMessengerCallbackEXT)debugMessage);
+    const auto dynamicLoader = vk::detail::DispatchLoaderDynamic(context.instance, vkGetInstanceProcAddr);
+    const auto messenger = context.instance.createDebugUtilsMessengerEXTUnique(debugUtilsMsgCreateInfo, nullptr, dynamicLoader);
 
 	const auto phyDevices = context.instance.enumeratePhysicalDevices();
 	// TODO selection
