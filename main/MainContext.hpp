@@ -57,6 +57,7 @@ struct Settings {
 	bool useTAA = false;
 	bool useAO = false;
 	bool useShadowMaps = false;
+	bool useRayTracing = false;
 
 	RenderTillingInfo baseTillingInfo;
 };
@@ -82,6 +83,7 @@ struct RaytracingExtHolder {
 	vk::Buffer scratch[2];
 	std::vector<vk::DeviceMemory> memory;
 	vk::AccelerationStructureKHR accelerationStructures[2];
+	vk::DescriptorSet accelerationSet;
 };
 
 struct RaytracingMainContext {

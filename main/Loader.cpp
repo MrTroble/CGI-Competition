@@ -385,8 +385,6 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	cmd.end();
 	context.queue.submit(submitInfo, context.fence);
 
-	out.rayHolder = extHolder;
-
 	vk::AccelerationStructureDeviceAddressInfoKHR blasAddressInfo{};
 	blasAddressInfo.accelerationStructure = extHolder.accelerationStructures[0];
 	vk::DeviceAddress blasAddress = context.device.getAccelerationStructureAddressKHR(blasAddressInfo, context.dynamicLoader);
@@ -480,25 +478,8 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	tlasRange.primitiveCount = 1;
 	std::array ranges = { &tlasRange };
 
-
-	context.device.waitForFences(context.fence, true, UINT64_MAX);
-	context.device.resetFences(context.fence);
-	cmd.reset();
-
-	vk::CommandBufferBeginInfo beginInfoTlas(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-	cmd.begin(beginInfoTlas);
-
-	cmd.buildAccelerationStructuresKHR(tlasBuildInfo, ranges, context.dynamicLoader);
-
-	cmd.end();
-	context.queue.submit(submitInfo, context.fence);
-
-	vk::DescriptorSetAllocateInfo allocInfo{};
-	allocInfo.descriptorPool = context.raytraceExt.pool;
-	allocInfo.descriptorSetCount = 1;
-	allocInfo.setSetLayouts(context.raytraceExt.descLayout);
-
-	vk::DescriptorSet descriptorSet = context.device.allocateDescriptorSets(allocInfo)[0];
+	vk::DescriptorSetAllocateInfo allocInfo{ context.raytraceExt.pool, context.raytraceExt.descLayout };
+	extHolder.accelerationSet = context.device.allocateDescriptorSets(allocInfo)[0];
 
 	vk::WriteDescriptorSetAccelerationStructureKHR asInfo{};
 	asInfo.accelerationStructureCount = 1;
@@ -508,51 +489,10 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	writeAS.dstBinding = 0;
 	writeAS.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
 	writeAS.pNext = &asInfo;
-	writeAS.dstSet = descriptorSet;
+	writeAS.dstSet = extHolder.accelerationSet;
 	writeAS.descriptorCount = 1;
 
-	vk::ImageCreateInfo imageInfo{};
-	imageInfo.imageType = vk::ImageType::e2D;
-	imageInfo.format = vk::Format::eR8G8B8A8Unorm;
-	imageInfo.extent = vk::Extent3D(context.currentExtent.width, context.currentExtent.height, 1);
-	imageInfo.mipLevels = 1;
-	imageInfo.arrayLayers = 1;
-	imageInfo.samples = vk::SampleCountFlagBits::e1;
-	imageInfo.tiling = vk::ImageTiling::eOptimal;
-	imageInfo.usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc;
-
-	vk::Image outputImage = context.device.createImage(imageInfo);
-	vk::MemoryRequirements memRequirements = context.device.getImageMemoryRequirements(outputImage);
-	vk::MemoryAllocateInfo allocInfoImage{ memRequirements.size , context.deviceLocalOnly };
-	vk::DeviceMemory outputMemory = context.device.allocateMemory(allocInfoImage);
-	context.device.bindImageMemory(outputImage, outputMemory, 0);
-
-	vk::ImageViewCreateInfo viewInfo{};
-	viewInfo.image = outputImage;
-	viewInfo.viewType = vk::ImageViewType::e2D;
-	viewInfo.format = vk::Format::eR8G8B8A8Unorm;
-
-	viewInfo.subresourceRange.aspectMask =
-		vk::ImageAspectFlagBits::eColor;
-	viewInfo.subresourceRange.baseMipLevel = 0;
-	viewInfo.subresourceRange.levelCount = 1;
-	viewInfo.subresourceRange.baseArrayLayer = 0;
-	viewInfo.subresourceRange.layerCount = 1;
-
-	vk::ImageView outputImageView = context.device.createImageView(viewInfo);
-
-	vk::DescriptorImageInfo desImageInfo{};
-	desImageInfo.imageView = outputImageView;
-	desImageInfo.imageLayout = vk::ImageLayout::eGeneral;
-
-	vk::WriteDescriptorSet writeImage{};
-	writeImage.dstBinding = 1;
-	writeImage.descriptorType = vk::DescriptorType::eStorageImage;
-	writeImage.pImageInfo = &desImageInfo;
-	writeImage.dstSet = descriptorSet;
-	writeImage.descriptorCount = 1;
-
-	context.device.updateDescriptorSets({ writeAS, writeImage }, {});
+	context.device.updateDescriptorSets(writeAS, {});
 
 	vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingProperties{};
 	vk::PhysicalDeviceProperties2 properties{};
@@ -625,24 +565,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 
 	vk::StridedDeviceAddressRegionKHR callableRegion{};
 
-	//Test---------------------
-	context.device.waitForFences(context.fence, true, UINT64_MAX);
-	context.device.resetFences(context.fence);
-	cmd.reset();
-	vk::CommandBufferBeginInfo beginInfoThree(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-	cmd.begin(beginInfoThree);
-
-	cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayPipeline);
-
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayLayout, 0, descriptorSet, {});
-
-	cmd.traceRaysKHR(raygenRegion, missRegion, hitRegion, callableRegion, context.currentExtent.width, context.currentExtent.height, 1, context.dynamicLoader);
-
-	cmd.end();
-	context.queue.submit(submitInfo, context.fence);
-
-	//---------------------------
-
+	out.rayHolder = extHolder;
 	std::cout << "Finished loading Ray ext!" << std::endl;
 
 	for (auto& sampler : model.samplers) {
