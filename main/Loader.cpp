@@ -320,7 +320,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 
     perNodeId = 0;
     for (auto& node : model.nodes) {
-        const auto currentModel = modelDataAdd + perNodeId * sizeof(VkTransformMatrixKHR);
+        const vk::DeviceAddress currentModel = modelDataAdd + perNodeId * sizeof(VkTransformMatrixKHR);
         perNodeId++;
         if (node.mesh >= 0) {
             auto& mesh = model.meshes[node.mesh];
@@ -337,7 +337,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
                 currentData.geometry.triangles.vertexData = addressVertex + posOff;
                 currentData.geometry.triangles.vertexStride = sizeof(glm::vec3);
                 currentData.geometry.triangles.maxVertex = indexAccess.count - 1;
-                currentData.geometry.triangles.transformData = currentModel;
+                currentData.geometry.triangles.transformData.deviceAddress = currentModel;
                 const uint32_t primitiveSize = (uint32_t)indexAccess.count / 3;
                 geometryData.push_back(currentData);
                 maxPrimitive.push_back(primitiveSize);
@@ -414,7 +414,13 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     vk::AccelerationStructureDeviceAddressInfoKHR blasAddressInfo{};
     blasAddressInfo.accelerationStructure = extHolder.accelerationStructures;
     vk::DeviceAddress blasAddress = context.device.getAccelerationStructureAddressKHR(blasAddressInfo, context.dynamicLoader);
+    VkTransformMatrixKHR identMatrix = {
+        1.0f, 0,    0,    0,
+        0,    1.0f, 0,    0,
+        0,    0,    1.0f, 0
+    };
     vk::AccelerationStructureInstanceKHR tlasInstance{};
+    tlasInstance.transform = identMatrix;
     tlasInstance.instanceCustomIndex = 0;
     tlasInstance.mask = 0xFF;
     tlasInstance.instanceShaderBindingTableRecordOffset = 0;

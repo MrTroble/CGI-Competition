@@ -641,6 +641,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     vk::AccelerationStructureGeometryKHR tlasGeometry{};
     tlasGeometry.geometryType = vk::GeometryTypeKHR::eInstances;
     tlasGeometry.geometry.instances = { false, instanceAddress };
+    tlasGeometry.flags = vk::GeometryFlagBitsKHR::eOpaque;
 
     vk::AccelerationStructureBuildGeometryInfoKHR tlasBuildInfo{};
     tlasBuildInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
@@ -687,10 +688,6 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     context.device.bindBufferMemory(tlasScratch, scratchMemory, 0);
     tlasBuildInfo.scratchData = context.device.getBufferAddress({ tlasScratch }, context.dynamicLoader);
 
-    vk::AccelerationStructureBuildRangeInfoKHR tlasRange{};
-    tlasRange.primitiveCount = 1;
-    std::array ranges = { &tlasRange };
-
     vk::DescriptorSetAllocateInfo allocInfo{ context.raytraceExt.pool, context.raytraceExt.descLayout };
     context.raytraceExt.topLevelDescSet = context.device.allocateDescriptorSets(allocInfo)[0];
 
@@ -710,6 +707,24 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     writeAS.dstBinding = 1;
     writeAS.descriptorType = vk::DescriptorType::eUniformBuffer;
     context.device.updateDescriptorSets(writeAS, {});
+
+    vk::CommandPoolCreateInfo poolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, context.queueIndex);
+    const auto pool = context.device.createCommandPool(poolCreateInfo);
+    vk::CommandBufferAllocateInfo allocateInfo(pool, vk::CommandBufferLevel::ePrimary, 1);
+    const auto cmd = context.device.allocateCommandBuffers(allocateInfo).back();
+    vk::CommandBufferBeginInfo cmdBeginInfo(vk::CommandBufferUsageFlags{});
+    cmd.begin(cmdBeginInfo);
+
+    vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{(uint32_t)outModels.size()};
+    cmd.buildAccelerationStructuresKHR(tlasBuildInfo, &rangeInfo, context.dynamicLoader);
+
+    cmd.end();
+
+    vk::SubmitInfo submitInfo({}, {}, cmd);
+    context.queue.submit(submitInfo);
+    context.queue.waitIdle();
+
+    context.device.destroy(pool);
 }
 
 inline void renderFrame(MainContext& context, std::span<const OutputModel> models) {
