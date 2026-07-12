@@ -54,7 +54,7 @@ inline void createSwapchain(MainContext& context) {
 
     vk::SwapchainCreateInfoKHR swapchainCreateInfo({}, context.surface, 5, context.formatUsed.format, context.formatUsed.colorSpace,
         context.currentExtent, 1, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eInputAttachment
-        | vk::ImageUsageFlagBits::eTransferSrc, vk::SharingMode::eExclusive, context.queueIndex,
+        | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst, vk::SharingMode::eExclusive, context.queueIndex,
         vk::SurfaceTransformFlagBitsKHR::eIdentity, vk::CompositeAlphaFlagBitsKHR::eOpaque, presentationMode);
     context.swapchain = context.device.createSwapchainKHR(swapchainCreateInfo);
     context.swapchainImages = context.device.getSwapchainImagesKHR(context.swapchain);
@@ -115,7 +115,8 @@ inline void createSwapchain(MainContext& context) {
     context.albedoView = albedoImageView;
 
     {   // Resolve attachments
-        albedoCreateInfo.usage |= vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage;
+        albedoCreateInfo.usage |= vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage 
+                               | vk::ImageUsageFlagBits::eTransferSrc;
         context.resolve1Image = context.device.createImage(albedoCreateInfo);
         context.resolve2Image = context.device.createImage(albedoCreateInfo);
         const auto resolve1ImgRequ = context.device.getImageMemoryRequirements(context.resolve1Image);
@@ -368,7 +369,7 @@ void updateRayImageSet(MainContext& context) {
         vk::WriteDescriptorSet writeAS{};
         writeAS.dstBinding = 0;
         writeAS.descriptorType = vk::DescriptorType::eStorageImage;
-        vk::DescriptorImageInfo imageInfo{ {}, zahl == 0 ? context.resolveView : context.resolveView2, vk::ImageLayout::eGeneral };
+        vk::DescriptorImageInfo imageInfo{ {}, zahl == 0 ? context.resolveView2:context.resolveView, vk::ImageLayout::eGeneral };
         writeAS.setDstSet(imageSet);
         writeAS.setImageInfo(imageInfo);
         context.device.updateDescriptorSets(writeAS, {});
@@ -791,16 +792,20 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
         }
     }
     else {
-        const vk::RenderPassBeginInfo beginInfo(context.renderPass, context.framebuffer[imageID], { {0,0}, context.currentExtent }, clearValues);
-        cmd.beginRenderPass(beginInfo, vk::SubpassContents::eSecondaryCommandBuffers);
-        cmd.nextSubpass(vk::SubpassContents::eInline);
-        cmd.nextSubpass(vk::SubpassContents::eInline);
-        cmd.nextSubpass(vk::SubpassContents::eInline);
-        cmd.endRenderPass();
-
+        const auto targetImage = imageID % 2 == 0 ? context.resolve2Image : context.resolve1Image;
         cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayPipeline);
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayLayout, 0, { context.raytraceExt.imageSet[imageID % 2], context.raytraceExt.topLevelDescSet }, {});
         cmd.traceRaysKHR(context.raytraceExt.raygenRegion, context.raytraceExt.missRegion, context.raytraceExt.hitRegion, context.raytraceExt.callableRegion, context.currentExtent.width, context.currentExtent.height, 1, context.dynamicLoader);
+        vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+        vk::ImageCopy imageCopy(subresource, {}, subresource, {}, vk::Extent3D(context.currentExtent, 1.0f));
+        cmd.copyImage(
+            targetImage,
+            vk::ImageLayout::eGeneral,
+            context.swapchainImages[imageID],
+            vk::ImageLayout::eGeneral,
+            imageCopy
+        );
+
     }
 
     vk::RenderingAttachmentInfo attachmentInfo(context.swapchainImageViews[imageID], vk::ImageLayout::eGeneral,
