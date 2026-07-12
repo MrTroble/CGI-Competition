@@ -399,12 +399,16 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 		const auto buildSizeInfo = context.device.getAccelerationStructureBuildSizesKHR(
 			vk::AccelerationStructureBuildTypeKHR::eDevice, geometryInfo[indexLocal], maxPrimitive, context.dynamicLoader);
 		vk::BufferCreateFlags localFlags = {};
-		const auto bufferUsage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR;
+		const auto bufferUsage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
 		vk::BufferCreateInfo createInfo(localFlags, buildSizeInfo.accelerationStructureSize, bufferUsage, vk::SharingMode::eExclusive, queueIndexes);
 		const auto vbuffer = context.device.createBuffer(createInfo);
 		const auto bufferRequ = context.device.getBufferMemoryRequirements(vbuffer);
 
+		vk::MemoryAllocateFlagsInfo blasFlagInfo{};
+		blasFlagInfo.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+
 		vk::MemoryAllocateInfo allocInfo(bufferRequ.size, context.deviceLocalOnly);
+		allocInfo.pNext = &blasFlagInfo;
 		const auto memory = context.device.allocateMemory(allocInfo);
 		context.device.bindBufferMemory(vbuffer, memory, 0);
 
@@ -447,6 +451,111 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 
 	out.rayHolder = extHolder;
 
+	vk::AccelerationStructureDeviceAddressInfoKHR blasAddressInfo{};
+	blasAddressInfo.accelerationStructure = extHolder.accelerationStructures[0];
+	vk::DeviceAddress blasAddress = context.device.getAccelerationStructureAddressKHR(blasAddressInfo, context.dynamicLoader);
+	vk::AccelerationStructureInstanceKHR tlasInstance{};
+	glm::mat4 transform = transformMatrix;
+	memcpy(&tlasInstance.transform, &transform, sizeof(tlasInstance.transform));
+	tlasInstance.instanceCustomIndex = 0;
+	tlasInstance.mask = 0xFF;
+	tlasInstance.instanceShaderBindingTableRecordOffset = 0;
+	tlasInstance.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
+	tlasInstance.accelerationStructureReference = blasAddress;
+
+	vk::BufferCreateInfo tlasInstanceBufferInfo{};
+	tlasInstanceBufferInfo.size = sizeof(vk::AccelerationStructureInstanceKHR);
+	tlasInstanceBufferInfo.usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	vk::Buffer instanceBuffer = context.device.createBuffer(tlasInstanceBufferInfo);
+
+	auto requirements = context.device.getBufferMemoryRequirements(instanceBuffer);
+	vk::MemoryAllocateFlagsInfo tlasFlags{};
+	tlasFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+	vk::MemoryAllocateInfo alloc{};
+	alloc.allocationSize = requirements.size;
+	alloc.memoryTypeIndex = context.hostVisibleDeviceLocalMemory;
+	alloc.pNext = &tlasFlags;
+	vk::DeviceMemory instanceMemory = context.device.allocateMemory(alloc);
+
+	context.device.bindBufferMemory(instanceBuffer, instanceMemory, 0);
+	void* data = context.device.mapMemory(instanceMemory, 0, sizeof(tlasInstance));
+	memcpy(data, &tlasInstance, sizeof(tlasInstance));
+	context.device.unmapMemory(instanceMemory);
+	vk::DeviceAddress instanceAddress = context.device.getBufferAddress({ instanceBuffer }, context.dynamicLoader);
+
+	vk::AccelerationStructureGeometryInstancesDataKHR instancesData{};
+
+	instancesData.arrayOfPointers = VK_FALSE;
+	instancesData.data.deviceAddress = instanceAddress;
+
+	vk::AccelerationStructureGeometryKHR tlasGeometry{};
+	tlasGeometry.geometryType = vk::GeometryTypeKHR::eInstances;
+	tlasGeometry.geometry.instances = instancesData;
+
+	vk::AccelerationStructureBuildGeometryInfoKHR tlasBuildInfo{};
+	tlasBuildInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
+	tlasBuildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+	tlasBuildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
+	tlasBuildInfo.geometryCount = 1;
+	tlasBuildInfo.pGeometries = &tlasGeometry;
+	tlasBuildInfo.dstAccelerationStructure = extHolder.accelerationStructures[1];
+	uint32_t instanceCount = 1;
+
+	auto tlasSize = context.device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, tlasBuildInfo, instanceCount, context.dynamicLoader);
+
+	vk::BufferCreateInfo tlasBufferInfo{};
+	tlasBufferInfo.size = tlasSize.accelerationStructureSize;
+	tlasBufferInfo.usage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	tlasBufferInfo.sharingMode = vk::SharingMode::eExclusive;
+	vk::Buffer tlasBuffer = context.device.createBuffer(tlasBufferInfo);
+	auto tlasRequirements = context.device.getBufferMemoryRequirements(tlasBuffer);
+	vk::MemoryAllocateFlagsInfo tlasMemoryFlags{}; tlasMemoryFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+	vk::MemoryAllocateInfo tlasAlloc{};
+	tlasAlloc.allocationSize = tlasRequirements.size;
+	tlasAlloc.memoryTypeIndex = context.deviceLocalOnly;
+	tlasAlloc.pNext = &tlasMemoryFlags;
+	vk::DeviceMemory tlasMemory = context.device.allocateMemory(tlasAlloc);
+	context.device.bindBufferMemory(tlasBuffer, tlasMemory, 0);
+
+	vk::AccelerationStructureCreateInfoKHR tlasCreateInfo{};
+	tlasCreateInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
+	tlasCreateInfo.size = tlasSize.accelerationStructureSize;
+	tlasCreateInfo.buffer = tlasBuffer;
+
+	extHolder.accelerationStructures[1] = context.device.createAccelerationStructureKHR(tlasCreateInfo, nullptr, context.dynamicLoader);;
+
+	vk::BufferCreateInfo scratchInfo{};
+	scratchInfo.size = tlasSize.buildScratchSize;
+	scratchInfo.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
+	vk::Buffer tlasScratch = context.device.createBuffer(scratchInfo);
+	auto scratchReq = context.device.getBufferMemoryRequirements(tlasScratch);
+	vk::MemoryAllocateFlagsInfo scratchFlags{};
+	scratchFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+	vk::MemoryAllocateInfo scratchAlloc{};
+	scratchAlloc.allocationSize = scratchReq.size;
+	scratchAlloc.memoryTypeIndex = context.deviceLocalOnly;
+	scratchAlloc.pNext = &scratchFlags;
+	vk::DeviceMemory scratchMemory = context.device.allocateMemory(scratchAlloc);
+	context.device.bindBufferMemory(tlasScratch, scratchMemory, 0);
+	tlasBuildInfo.dstAccelerationStructure = extHolder.accelerationStructures[1];
+	tlasBuildInfo.scratchData = context.device.getBufferAddress({ tlasScratch }, context.dynamicLoader);
+
+	vk::AccelerationStructureBuildRangeInfoKHR tlasRange{};
+	tlasRange.primitiveCount = 1;
+	std::array ranges = { &tlasRange };
+
+
+	context.device.waitForFences(context.fence, true, UINT64_MAX);
+	context.device.resetFences(context.fence);
+	cmd.reset();
+
+	vk::CommandBufferBeginInfo beginInfoTlas(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+	cmd.begin(beginInfoTlas);
+
+	cmd.buildAccelerationStructuresKHR(tlasBuildInfo, ranges, context.dynamicLoader);
+
+	cmd.end();
+	context.queue.submit(submitInfo, context.fence);
 
 	auto raytracingPipeline = createRaytracingPipeline(context);
 
@@ -494,13 +603,11 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	allocInfo.descriptorSetCount = 1;
 	allocInfo.pSetLayouts = &descriptorSetLayoutRaytracing;
 
-
 	vk::DescriptorSet descriptorSet = context.device.allocateDescriptorSets(allocInfo)[0];
 
 	vk::WriteDescriptorSetAccelerationStructureKHR asInfo{};
-	//accelerationStructures[1] = NULL ?
-	asInfo.accelerationStructureCount = 1;//std::size(extHolder.accelerationStructures);
-	asInfo.pAccelerationStructures = extHolder.accelerationStructures;
+	asInfo.accelerationStructureCount = 1;
+	asInfo.pAccelerationStructures = &extHolder.accelerationStructures[1];
 
 	vk::WriteDescriptorSet writeAS{};
 	writeAS.dstBinding = 0;
