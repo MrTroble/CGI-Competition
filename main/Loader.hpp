@@ -19,6 +19,7 @@ struct OutputModel {
 	std::vector<vk::DescriptorSet> imageSets;
 
 	ArrayBuffer modelBuffer;
+	ArrayBuffer rayTraceBuff;
 
 	tinygltf::Model backupModel;
 
