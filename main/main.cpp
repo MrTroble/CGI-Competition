@@ -458,7 +458,7 @@ inline void createRaytracingPipeline(MainContext& context) {
     bindings[1].descriptorCount = 1;
     bindings[1].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-    vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, bindings[0]};
+    vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, bindings[0] };
     context.raytraceExt.descLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
     desriptorLayoutInfo.setBindings(bindings[1]);
     context.raytraceExt.descImageLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
@@ -504,7 +504,7 @@ inline void createRaytracingPipeline(MainContext& context) {
     vk::DescriptorPoolCreateInfo poolInfo{ {}, MAX_POOL, accelPool };
     context.raytraceExt.pool = context.device.createDescriptorPool(poolInfo);
 
-    vk::DescriptorPoolCreateInfo poolInfoImage{ {}, 1, imagePoolSize };
+    vk::DescriptorPoolCreateInfo poolInfoImage{ {}, imagePoolSize.descriptorCount, imagePoolSize };
     context.raytraceExt.imagePool = context.device.createDescriptorPool(poolInfoImage);
 
     std::array imageDescsLocal = { context.raytraceExt.descImageLayout , context.raytraceExt.descImageLayout };
@@ -541,69 +541,79 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
     clearValues[6].color.float32[3] = 1.0f;
     const vk::CommandBufferBeginInfo begin(vk::CommandBufferUsageFlags{});
     cmd.begin(begin);
-
-    const vk::RenderPassBeginInfo beginInfo(context.renderPass, context.framebuffer[imageID], { {0,0}, context.currentExtent }, clearValues);
-    cmd.beginRenderPass(beginInfo, vk::SubpassContents::eSecondaryCommandBuffers);
     auto& s = context.settings;
 
-    for (auto& model : models) {
-        cmd.executeCommands(model.cmd[imageID]);
-    }
+    if (!s.useRayTracing) {
+        const vk::RenderPassBeginInfo beginInfo(context.renderPass, context.framebuffer[imageID], { {0,0}, context.currentExtent }, clearValues);
+        cmd.beginRenderPass(beginInfo, vk::SubpassContents::eSecondaryCommandBuffers);
 
-    cmd.nextSubpass(vk::SubpassContents::eInline);
+        for (auto& model : models) {
+            cmd.executeCommands(model.cmd[imageID]);
+        }
 
-    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, context.lightPipeline);
+        cmd.nextSubpass(vk::SubpassContents::eInline);
 
-    std::vector<RenderTillingInfo> infos(s.baseTillingInfo.xAmount * s.baseTillingInfo.yAmount * s.baseTillingInfo.zAmount);
-    RenderTillingInfo infoTilling = s.baseTillingInfo;
-    for (size_t x = 0; x < s.baseTillingInfo.xAmount; x++)
-    {
-        infoTilling.xOffset = x;
-        for (size_t y = 0; y < s.baseTillingInfo.yAmount; y++)
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, context.lightPipeline);
+
+        std::vector<RenderTillingInfo> infos(s.baseTillingInfo.xAmount * s.baseTillingInfo.yAmount * s.baseTillingInfo.zAmount);
+        RenderTillingInfo infoTilling = s.baseTillingInfo;
+        for (size_t x = 0; x < s.baseTillingInfo.xAmount; x++)
         {
-            infoTilling.yOffset = y;
-            for (size_t z = 0; z < s.baseTillingInfo.zAmount; z++)
+            infoTilling.xOffset = x;
+            for (size_t y = 0; y < s.baseTillingInfo.yAmount; y++)
             {
-                infoTilling.zOffset = z;
-                infos[indexFrom({ x, y, z }, s.baseTillingInfo)] = infoTilling;
+                infoTilling.yOffset = y;
+                for (size_t z = 0; z < s.baseTillingInfo.zAmount; z++)
+                {
+                    infoTilling.zOffset = z;
+                    infos[indexFrom({ x, y, z }, s.baseTillingInfo)] = infoTilling;
+                }
             }
         }
+
+        rebuildLightLists(context);
+
+        size_t lightListIndex = 0;
+        for (const auto& value : infos) {
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, context.lightLayout, 0,
+                { context.lightMapSet, context.cameraNode.descriptors[0], context.lightSources.descriptors[0], context.lightListUpload.descriptors[lightListIndex++] }, {});
+            cmd.pushConstants<RenderTillingInfo>(context.lightLayout, (vk::ShaderStageFlags)vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, value);
+            cmd.draw(4, 1, 0, 0);
+        }
+
+        // Taa
+        cmd.nextSubpass(vk::SubpassContents::eInline);
+
+        if (s.useTAA) {
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, context.taaPipeline);
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, context.taaLayout, 0, { context.taaSets[imageID], context.cameraNode.descriptors[0] }, {});
+            cmd.draw(4, 1, 0, 0);
+        }
+
+        // gui
+        cmd.nextSubpass(vk::SubpassContents::eInline);
+        cmd.endRenderPass();
+
+        if (s.useTAA) {
+            const auto targetImage = imageID % 2 == 0 ? context.resolve2Image : context.resolve1Image;
+            vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+            vk::ImageCopy imageCopy(subresource, {}, subresource, {}, vk::Extent3D(context.currentExtent, 1.0f));
+            cmd.copyImage(
+                context.swapchainImages[imageID],
+                vk::ImageLayout::eGeneral,
+                targetImage,
+                vk::ImageLayout::eGeneral,
+                imageCopy
+            );
+        }
     }
-
-    rebuildLightLists(context);
-
-    size_t lightListIndex = 0;
-    for (const auto& value : infos) {
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, context.lightLayout, 0,
-            { context.lightMapSet, context.cameraNode.descriptors[0], context.lightSources.descriptors[0], context.lightListUpload.descriptors[lightListIndex++] }, {});
-        cmd.pushConstants<RenderTillingInfo>(context.lightLayout, (vk::ShaderStageFlags)vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0u, value);
-        cmd.draw(4, 1, 0, 0);
-    }
-
-    // Taa
-    cmd.nextSubpass(vk::SubpassContents::eInline);
-
-    if (s.useTAA) {
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, context.taaPipeline);
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, context.taaLayout, 0, { context.taaSets[imageID], context.cameraNode.descriptors[0] }, {});
-        cmd.draw(4, 1, 0, 0);
-    }
-
-    // gui
-    cmd.nextSubpass(vk::SubpassContents::eInline);
-    cmd.endRenderPass();
-
-    if (s.useTAA) {
-        const auto targetImage = imageID % 2 == 0 ? context.resolve2Image : context.resolve1Image;
-        vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
-        vk::ImageCopy imageCopy(subresource, {}, subresource, {}, vk::Extent3D(context.currentExtent, 1.0f));
-        cmd.copyImage(
-            context.swapchainImages[imageID],
-            vk::ImageLayout::eGeneral,
-            targetImage,
-            vk::ImageLayout::eGeneral,
-            imageCopy
-        );
+    else {
+        const vk::RenderPassBeginInfo beginInfo(context.renderPass, context.framebuffer[imageID], { {0,0}, context.currentExtent }, clearValues);
+        cmd.beginRenderPass(beginInfo, vk::SubpassContents::eSecondaryCommandBuffers);
+        cmd.nextSubpass(vk::SubpassContents::eInline);
+        cmd.nextSubpass(vk::SubpassContents::eInline);
+        cmd.nextSubpass(vk::SubpassContents::eInline);
+        cmd.endRenderPass();
     }
 
     vk::RenderingAttachmentInfo attachmentInfo(context.swapchainImageViews[imageID], vk::ImageLayout::eGeneral,
@@ -618,6 +628,7 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
     ImGui::Checkbox("Show Lights", &s.showLights);
     ImGui::Checkbox("Use TAA", &s.useTAA);
     ImGui::Checkbox("Show AO", &s.useAO);
+    ImGui::Checkbox("Use ray tracing", &s.useRayTracing);
     context.cameraNodeData.windowParameter.z = s.useAO ? 1.0f : 0.0f;
 
     ImGui::SliderInt3("Tiling", (int*)&s.baseTillingInfo.xAmount, 1, MAX_TILLING);
