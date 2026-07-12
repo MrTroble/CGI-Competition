@@ -68,11 +68,11 @@ inline vk::Pipeline createPipeline(MainContext& context, const bool doubeleSided
 	// TODO Check
 	return result.value;
 }
-inline vk::Pipeline createRaytracingPipeline(MainContext& context, const std::string& usedSystem) {
+inline vk::Pipeline createRaytracingPipeline(MainContext& context) {
 	std::array shaderStagesLoaded = {
 		loadShaderStages(context,  "raygen.rgen.spv"),
-	loadShaderStages(context,  "miss.rmiss.spv"),
-	loadShaderStages(context, "closesthit.rchit.spv")
+		loadShaderStages(context,  "miss.rmiss.spv"),
+		loadShaderStages(context, "closesthit.rchit.spv")
 	};
 
 	std::array<vk::DescriptorSetLayoutBinding, 2> bindings{};
@@ -446,6 +446,208 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	context.queue.submit(submitInfo, context.fence);
 
 	out.rayHolder = extHolder;
+
+
+	auto raytracingPipeline = createRaytracingPipeline(context);
+
+	vk::DescriptorSetLayoutBinding tlasBinding{};
+	tlasBinding.binding = 0;
+	tlasBinding.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
+	tlasBinding.descriptorCount = 1;
+	tlasBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
+
+	vk::DescriptorSetLayoutBinding imageBinding{};
+	imageBinding.binding = 1;
+	imageBinding.descriptorType = vk::DescriptorType::eStorageImage;
+	imageBinding.descriptorCount = 1;
+	imageBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
+
+	std::array<vk::DescriptorSetLayoutBinding, 2> bindings = { tlasBinding,imageBinding };
+
+	vk::DescriptorSetLayoutCreateInfo layoutInfo{};
+	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+	layoutInfo.pBindings = bindings.data();
+
+	vk::DescriptorSetLayout descriptorSetLayoutRaytracing = context.device.createDescriptorSetLayout(layoutInfo);
+
+	std::array<vk::DescriptorPoolSize, 2> poolSizes =
+	{
+		vk::DescriptorPoolSize{
+			vk::DescriptorType::eAccelerationStructureKHR,
+			1
+		},
+		vk::DescriptorPoolSize{
+			vk::DescriptorType::eStorageImage,
+			1
+		}
+	};
+
+	vk::DescriptorPoolCreateInfo poolInfo{};
+	poolInfo.maxSets = 1;
+	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+	poolInfo.pPoolSizes = poolSizes.data();
+	vk::DescriptorPool descriptorPool = context.device.createDescriptorPool(poolInfo);
+
+	vk::DescriptorSetAllocateInfo allocInfo{};
+
+	allocInfo.descriptorPool = descriptorPool;
+	allocInfo.descriptorSetCount = 1;
+	allocInfo.pSetLayouts = &descriptorSetLayoutRaytracing;
+
+
+	vk::DescriptorSet descriptorSet = context.device.allocateDescriptorSets(allocInfo)[0];
+
+	vk::WriteDescriptorSetAccelerationStructureKHR asInfo{};
+	//accelerationStructures[1] = NULL ?
+	asInfo.accelerationStructureCount = 1;//std::size(extHolder.accelerationStructures);
+	asInfo.pAccelerationStructures = extHolder.accelerationStructures;
+
+	vk::WriteDescriptorSet writeAS{};
+	writeAS.dstBinding = 0;
+	writeAS.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
+	writeAS.pNext = &asInfo;
+	writeAS.dstSet = descriptorSet;
+	writeAS.descriptorCount = 1;
+
+	vk::ImageCreateInfo imageInfo{};
+	imageInfo.imageType = vk::ImageType::e2D;
+	imageInfo.format = vk::Format::eR8G8B8A8Unorm;
+	imageInfo.extent = vk::Extent3D(context.currentExtent.width, context.currentExtent.height, 1);
+	imageInfo.mipLevels = 1;
+	imageInfo.arrayLayers = 1;
+	imageInfo.samples = vk::SampleCountFlagBits::e1;
+	imageInfo.tiling = vk::ImageTiling::eOptimal;
+	imageInfo.usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc;
+
+	vk::Image outputImage = context.device.createImage(imageInfo);
+	vk::MemoryRequirements memRequirements = context.device.getImageMemoryRequirements(outputImage);
+	vk::MemoryAllocateInfo allocInfoImage{ memRequirements.size , context.deviceLocalOnly };
+	vk::DeviceMemory outputMemory = context.device.allocateMemory(allocInfoImage);
+	context.device.bindImageMemory(outputImage, outputMemory, 0);
+
+	vk::ImageViewCreateInfo viewInfo{};
+	viewInfo.image = outputImage;
+	viewInfo.viewType = vk::ImageViewType::e2D;
+	viewInfo.format = vk::Format::eR8G8B8A8Unorm;
+
+	viewInfo.subresourceRange.aspectMask =
+		vk::ImageAspectFlagBits::eColor;
+	viewInfo.subresourceRange.baseMipLevel = 0;
+	viewInfo.subresourceRange.levelCount = 1;
+	viewInfo.subresourceRange.baseArrayLayer = 0;
+	viewInfo.subresourceRange.layerCount = 1;
+
+	vk::ImageView outputImageView = context.device.createImageView(viewInfo);
+
+	vk::DescriptorImageInfo desImageInfo{};
+	desImageInfo.imageView = outputImageView;
+	desImageInfo.imageLayout = vk::ImageLayout::eGeneral;
+
+	vk::WriteDescriptorSet writeImage{};
+	writeImage.dstBinding = 1;
+	writeImage.descriptorType = vk::DescriptorType::eStorageImage;
+	writeImage.pImageInfo = &desImageInfo;
+	writeImage.dstSet = descriptorSet;
+	writeImage.descriptorCount = 1;
+
+	context.device.updateDescriptorSets({ writeAS, writeImage }, {});
+
+	vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingProperties{};
+	vk::PhysicalDeviceProperties2 properties{};
+	properties.pNext = &rayTracingProperties;
+
+	context.usedPhyDevice.getProperties2(&properties);
+
+	uint32_t handleSize = rayTracingProperties.shaderGroupHandleSize;
+	//todo remove magic number
+	uint32_t groupCount = 3;
+	std::vector<uint8_t> shaderHandles(groupCount * handleSize);
+	auto handels = context.device.getRayTracingShaderGroupHandlesKHR(raytracingPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
+	vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst;
+
+	uint32_t handleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
+	uint32_t baseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
+	auto alignUp = [](uint32_t value, uint32_t alignment)
+		{
+			return (value + alignment - 1) &
+				~(alignment - 1);
+		};
+	uint32_t handleStride = alignUp(handleSize, handleAlignment);
+	uint32_t raygenSize = handleStride;
+	uint32_t missSize = handleStride;
+	uint32_t hitSize = handleStride;
+	uint32_t missOffset = alignUp(raygenSize, baseAlignment);
+	uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
+	uint32_t sbtSize = hitOffset + hitSize;
+
+	vk::BufferCreateInfo sbtBufferInfo{};
+	sbtBufferInfo.size = sbtSize;
+	sbtBufferInfo.usage = usage;
+	sbtBufferInfo.sharingMode = vk::SharingMode::eExclusive;
+	vk::Buffer sbtBuffer = context.device.createBuffer(sbtBufferInfo);
+
+	vk::MemoryRequirements memReq = context.device.getBufferMemoryRequirements(sbtBuffer);
+	vk::MemoryAllocateFlagsInfo flags{};
+	flags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+	vk::MemoryAllocateInfo allocInfoSBT{};
+
+	allocInfoSBT.allocationSize = memReq.size;
+	allocInfoSBT.memoryTypeIndex = context.hostVisibleDeviceLocalMemory;
+	allocInfoSBT.pNext = &flags;
+
+	vk::DeviceMemory sbtMemory = context.device.allocateMemory(allocInfoSBT);
+	context.device.bindBufferMemory(sbtBuffer, sbtMemory, 0);
+
+	void* mapped = context.device.mapMemory(sbtMemory, 0, sbtSize);
+	memset(mapped, 0, sbtSize);
+	memcpy(static_cast<char*>(mapped), shaderHandles.data(), handleSize);
+	memcpy(static_cast<char*>(mapped) + missOffset, shaderHandles.data() + handleSize, handleSize);
+	memcpy(static_cast<char*>(mapped) + hitOffset, shaderHandles.data() + 2 * handleSize, handleSize);
+	context.device.unmapMemory(sbtMemory);
+	vk::DeviceAddress sbtAddress = context.device.getBufferAddress(vk::BufferDeviceAddressInfo{ sbtBuffer }, context.dynamicLoader);
+
+	vk::StridedDeviceAddressRegionKHR raygenRegion{};
+	raygenRegion.deviceAddress = sbtAddress;
+	raygenRegion.stride = handleStride;
+	raygenRegion.size = handleStride;
+
+	vk::StridedDeviceAddressRegionKHR missRegion{};
+	missRegion.deviceAddress = sbtAddress + missOffset;
+	missRegion.stride = handleStride;
+	missRegion.size = handleStride;
+
+	vk::StridedDeviceAddressRegionKHR hitRegion{};
+	hitRegion.deviceAddress = sbtAddress + hitOffset;
+	hitRegion.stride = handleStride;
+	hitRegion.size = handleStride;
+
+	vk::StridedDeviceAddressRegionKHR callableRegion{};
+
+	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
+
+	pipelineLayoutInfo.setSetLayoutCount(1);
+	pipelineLayoutInfo.setPSetLayouts(&descriptorSetLayoutRaytracing);
+
+	auto pipelineLayout = context.device.createPipelineLayout(pipelineLayoutInfo);
+
+	//Test---------------------
+	context.device.waitForFences(context.fence, true, UINT64_MAX);
+	context.device.resetFences(context.fence);
+	cmd.reset();
+	vk::CommandBufferBeginInfo beginInfoThree(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+	cmd.begin(beginInfoThree);
+
+	cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, raytracingPipeline);
+
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, descriptorSet, {});
+
+	cmd.traceRaysKHR(raygenRegion, missRegion, hitRegion, callableRegion, context.currentExtent.width, context.currentExtent.height, 1, context.dynamicLoader);
+
+	cmd.end();
+	context.queue.submit(submitInfo, context.fence);
+
+	//---------------------------
+
 	std::cout << "Finished loading Ray ext!" << std::endl;
 
 	out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout);
@@ -485,10 +687,9 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			systemUsed = "USE_ALB_NORM";
 		}
 		out.pipes.push_back(createPipeline(context, material.doubleSided, systemUsed, config.fillMode));
-		createRaytracingPipeline(context, systemUsed);
 		descriptorID++;
 	}
-
+	createRaytracingPipeline(context);
 	const auto cameraDesc = context.cameraNode.descriptors.back();
 
 	size_t frameBufferID = 0;

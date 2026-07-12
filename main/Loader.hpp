@@ -40,7 +40,7 @@ inline std::pair<size_t, size_t> getFromInput(tinygltf::Model& model, tinygltf::
 }
 
 class GLTFLoader {
-	
+
 public:
 	bool load(MainContext& context, const fs::path& path, OutputModel& out, const ModelConfig config);
 };
