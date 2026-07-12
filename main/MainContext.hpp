@@ -82,8 +82,9 @@ struct RaytracingExtHolder {
 	vk::Buffer buffer[2];
 	vk::Buffer scratch[2];
 	std::vector<vk::DeviceMemory> memory;
-	vk::AccelerationStructureKHR accelerationStructures[2];
+	vk::AccelerationStructureKHR accelerationStructures;
 	vk::DescriptorSet accelerationSet;
+	vk::AccelerationStructureInstanceKHR instanceInfo;
 };
 
 struct RaytracingMainContext {
@@ -94,6 +95,14 @@ struct RaytracingMainContext {
 	vk::DescriptorPool pool;
 	vk::DescriptorPool imagePool;
 	std::vector<vk::DescriptorSet> imageSet;
+
+	vk::AccelerationStructureKHR topLevelStructure;
+	vk::DescriptorSet topLevelDescSet;
+
+	vk::StridedDeviceAddressRegionKHR raygenRegion;
+	vk::StridedDeviceAddressRegionKHR missRegion;
+	vk::StridedDeviceAddressRegionKHR hitRegion;
+	vk::StridedDeviceAddressRegionKHR callableRegion;
 };
 
 struct MainContext {

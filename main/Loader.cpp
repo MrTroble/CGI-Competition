@@ -324,7 +324,6 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 
 	std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> geometryInfo = {
 		vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eBottomLevel}
-		//,vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eTopLevel} 
 	};
 	std::array<vk::AccelerationStructureBuildRangeInfoKHR*, 1> buildRanges;
 	buildRanges[0] = structureBuildRange.data();
@@ -370,7 +369,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 		const auto dataStructure = context.device.createAccelerationStructureKHR(accelerationCreateInfo, nullptr, context.dynamicLoader);
 		geometryInfo[indexLocal].dstAccelerationStructure = dataStructure;
 		geometryInfo[indexLocal].scratchData = context.device.getBufferAddress({ scratchbuffer }, context.dynamicLoader);
-		extHolder.accelerationStructures[indexLocal] = dataStructure;
+		extHolder.accelerationStructures = dataStructure;
 		indexLocal++;
 	}
 
@@ -387,184 +386,15 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	context.queue.submit(submitInfo, context.fence);
 
 	vk::AccelerationStructureDeviceAddressInfoKHR blasAddressInfo{};
-	blasAddressInfo.accelerationStructure = extHolder.accelerationStructures[0];
+	blasAddressInfo.accelerationStructure = extHolder.accelerationStructures;
 	vk::DeviceAddress blasAddress = context.device.getAccelerationStructureAddressKHR(blasAddressInfo, context.dynamicLoader);
 	vk::AccelerationStructureInstanceKHR tlasInstance{};
-	glm::mat4 transform = transformMatrix;
-	memcpy(&tlasInstance.transform, &transform, sizeof(tlasInstance.transform));
 	tlasInstance.instanceCustomIndex = 0;
 	tlasInstance.mask = 0xFF;
 	tlasInstance.instanceShaderBindingTableRecordOffset = 0;
 	tlasInstance.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
 	tlasInstance.accelerationStructureReference = blasAddress;
-
-	vk::BufferCreateInfo tlasInstanceBufferInfo{};
-	tlasInstanceBufferInfo.size = sizeof(vk::AccelerationStructureInstanceKHR);
-	tlasInstanceBufferInfo.usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-	vk::Buffer instanceBuffer = context.device.createBuffer(tlasInstanceBufferInfo);
-
-	auto requirements = context.device.getBufferMemoryRequirements(instanceBuffer);
-	vk::MemoryAllocateFlagsInfo tlasFlags{};
-	tlasFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
-	vk::MemoryAllocateInfo alloc{};
-	alloc.allocationSize = requirements.size;
-	alloc.memoryTypeIndex = context.hostVisibleDeviceLocalMemory;
-	alloc.pNext = &tlasFlags;
-	vk::DeviceMemory instanceMemory = context.device.allocateMemory(alloc);
-
-	context.device.bindBufferMemory(instanceBuffer, instanceMemory, 0);
-	void* data = context.device.mapMemory(instanceMemory, 0, sizeof(tlasInstance));
-	memcpy(data, &tlasInstance, sizeof(tlasInstance));
-	context.device.unmapMemory(instanceMemory);
-	vk::DeviceAddress instanceAddress = context.device.getBufferAddress({ instanceBuffer }, context.dynamicLoader);
-
-	vk::AccelerationStructureGeometryInstancesDataKHR instancesData{};
-
-	instancesData.arrayOfPointers = VK_FALSE;
-	instancesData.data.deviceAddress = instanceAddress;
-
-	vk::AccelerationStructureGeometryKHR tlasGeometry{};
-	tlasGeometry.geometryType = vk::GeometryTypeKHR::eInstances;
-	tlasGeometry.geometry.instances = instancesData;
-
-	vk::AccelerationStructureBuildGeometryInfoKHR tlasBuildInfo{};
-	tlasBuildInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
-	tlasBuildInfo.flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
-	tlasBuildInfo.mode = vk::BuildAccelerationStructureModeKHR::eBuild;
-	tlasBuildInfo.geometryCount = 1;
-	tlasBuildInfo.pGeometries = &tlasGeometry;
-	tlasBuildInfo.dstAccelerationStructure = extHolder.accelerationStructures[1];
-	uint32_t instanceCount = 1;
-
-	auto tlasSize = context.device.getAccelerationStructureBuildSizesKHR(vk::AccelerationStructureBuildTypeKHR::eDevice, tlasBuildInfo, instanceCount, context.dynamicLoader);
-
-	vk::BufferCreateInfo tlasBufferInfo{};
-	tlasBufferInfo.size = tlasSize.accelerationStructureSize;
-	tlasBufferInfo.usage = vk::BufferUsageFlagBits::eAccelerationStructureStorageKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-	tlasBufferInfo.sharingMode = vk::SharingMode::eExclusive;
-	vk::Buffer tlasBuffer = context.device.createBuffer(tlasBufferInfo);
-	auto tlasRequirements = context.device.getBufferMemoryRequirements(tlasBuffer);
-	vk::MemoryAllocateFlagsInfo tlasMemoryFlags{}; tlasMemoryFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
-	vk::MemoryAllocateInfo tlasAlloc{};
-	tlasAlloc.allocationSize = tlasRequirements.size;
-	tlasAlloc.memoryTypeIndex = context.deviceLocalOnly;
-	tlasAlloc.pNext = &tlasMemoryFlags;
-	vk::DeviceMemory tlasMemory = context.device.allocateMemory(tlasAlloc);
-	context.device.bindBufferMemory(tlasBuffer, tlasMemory, 0);
-
-	vk::AccelerationStructureCreateInfoKHR tlasCreateInfo{};
-	tlasCreateInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
-	tlasCreateInfo.size = tlasSize.accelerationStructureSize;
-	tlasCreateInfo.buffer = tlasBuffer;
-
-	extHolder.accelerationStructures[1] = context.device.createAccelerationStructureKHR(tlasCreateInfo, nullptr, context.dynamicLoader);;
-
-	vk::BufferCreateInfo scratchInfo{};
-	scratchInfo.size = tlasSize.buildScratchSize;
-	scratchInfo.usage = vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-	vk::Buffer tlasScratch = context.device.createBuffer(scratchInfo);
-	auto scratchReq = context.device.getBufferMemoryRequirements(tlasScratch);
-	vk::MemoryAllocateFlagsInfo scratchFlags{};
-	scratchFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
-	vk::MemoryAllocateInfo scratchAlloc{};
-	scratchAlloc.allocationSize = scratchReq.size;
-	scratchAlloc.memoryTypeIndex = context.deviceLocalOnly;
-	scratchAlloc.pNext = &scratchFlags;
-	vk::DeviceMemory scratchMemory = context.device.allocateMemory(scratchAlloc);
-	context.device.bindBufferMemory(tlasScratch, scratchMemory, 0);
-	tlasBuildInfo.dstAccelerationStructure = extHolder.accelerationStructures[1];
-	tlasBuildInfo.scratchData = context.device.getBufferAddress({ tlasScratch }, context.dynamicLoader);
-
-	vk::AccelerationStructureBuildRangeInfoKHR tlasRange{};
-	tlasRange.primitiveCount = 1;
-	std::array ranges = { &tlasRange };
-
-	vk::DescriptorSetAllocateInfo allocInfo{ context.raytraceExt.pool, context.raytraceExt.descLayout };
-	extHolder.accelerationSet = context.device.allocateDescriptorSets(allocInfo)[0];
-
-	vk::WriteDescriptorSetAccelerationStructureKHR asInfo{};
-	asInfo.accelerationStructureCount = 1;
-	asInfo.pAccelerationStructures = &extHolder.accelerationStructures[1];
-
-	vk::WriteDescriptorSet writeAS{};
-	writeAS.dstBinding = 0;
-	writeAS.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
-	writeAS.pNext = &asInfo;
-	writeAS.dstSet = extHolder.accelerationSet;
-	writeAS.descriptorCount = 1;
-
-	context.device.updateDescriptorSets(writeAS, {});
-
-	vk::PhysicalDeviceRayTracingPipelinePropertiesKHR rayTracingProperties{};
-	vk::PhysicalDeviceProperties2 properties{};
-	properties.pNext = &rayTracingProperties;
-
-	context.usedPhyDevice.getProperties2(&properties);
-
-	uint32_t handleSize = rayTracingProperties.shaderGroupHandleSize;
-	//todo remove magic number
-	uint32_t groupCount = 3;
-	std::vector<uint8_t> shaderHandles(groupCount * handleSize);
-	auto handels = context.device.getRayTracingShaderGroupHandlesKHR(context.raytraceExt.mainRayPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
-	vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst;
-
-	uint32_t handleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
-	uint32_t baseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
-	auto alignUp = [](uint32_t value, uint32_t alignment)
-		{
-			return (value + alignment - 1) &
-				~(alignment - 1);
-		};
-	uint32_t handleStride = alignUp(handleSize, handleAlignment);
-	uint32_t raygenSize = handleStride;
-	uint32_t missSize = handleStride;
-	uint32_t hitSize = handleStride;
-	uint32_t missOffset = alignUp(raygenSize, baseAlignment);
-	uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
-	uint32_t sbtSize = hitOffset + hitSize;
-
-	vk::BufferCreateInfo sbtBufferInfo{};
-	sbtBufferInfo.size = sbtSize;
-	sbtBufferInfo.usage = usage;
-	sbtBufferInfo.sharingMode = vk::SharingMode::eExclusive;
-	vk::Buffer sbtBuffer = context.device.createBuffer(sbtBufferInfo);
-
-	vk::MemoryRequirements memReq = context.device.getBufferMemoryRequirements(sbtBuffer);
-	vk::MemoryAllocateFlagsInfo flags{};
-	flags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
-	vk::MemoryAllocateInfo allocInfoSBT{};
-
-	allocInfoSBT.allocationSize = memReq.size;
-	allocInfoSBT.memoryTypeIndex = context.hostVisibleDeviceLocalMemory;
-	allocInfoSBT.pNext = &flags;
-
-	vk::DeviceMemory sbtMemory = context.device.allocateMemory(allocInfoSBT);
-	context.device.bindBufferMemory(sbtBuffer, sbtMemory, 0);
-
-	void* mapped = context.device.mapMemory(sbtMemory, 0, sbtSize);
-	memset(mapped, 0, sbtSize);
-	memcpy(static_cast<char*>(mapped), shaderHandles.data(), handleSize);
-	memcpy(static_cast<char*>(mapped) + missOffset, shaderHandles.data() + handleSize, handleSize);
-	memcpy(static_cast<char*>(mapped) + hitOffset, shaderHandles.data() + 2 * handleSize, handleSize);
-	context.device.unmapMemory(sbtMemory);
-	vk::DeviceAddress sbtAddress = context.device.getBufferAddress(vk::BufferDeviceAddressInfo{ sbtBuffer }, context.dynamicLoader);
-
-	vk::StridedDeviceAddressRegionKHR raygenRegion{};
-	raygenRegion.deviceAddress = sbtAddress;
-	raygenRegion.stride = handleStride;
-	raygenRegion.size = handleStride;
-
-	vk::StridedDeviceAddressRegionKHR missRegion{};
-	missRegion.deviceAddress = sbtAddress + missOffset;
-	missRegion.stride = handleStride;
-	missRegion.size = handleStride;
-
-	vk::StridedDeviceAddressRegionKHR hitRegion{};
-	hitRegion.deviceAddress = sbtAddress + hitOffset;
-	hitRegion.stride = handleStride;
-	hitRegion.size = handleStride;
-
-	vk::StridedDeviceAddressRegionKHR callableRegion{};
+	extHolder.instanceInfo = tlasInstance;
 
 	out.rayHolder = extHolder;
 	std::cout << "Finished loading Ray ext!" << std::endl;
