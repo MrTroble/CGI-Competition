@@ -705,7 +705,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     writeAS.setDstSet(context.raytraceExt.topLevelDescSet);
     context.device.updateDescriptorSets(writeAS, {});
 
-    vk::DescriptorBufferInfo bufferInfo(context.cameraNode.buffer, 0, sizeof(PerNodeData));
+    vk::DescriptorBufferInfo bufferInfo(context.cameraNode.buffer, 0, sizeof(context.cameraNodeData));
     writeAS.setBufferInfo(bufferInfo);
     writeAS.dstBinding = 1;
     writeAS.descriptorType = vk::DescriptorType::eUniformBuffer;
