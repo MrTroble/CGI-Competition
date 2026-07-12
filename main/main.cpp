@@ -536,51 +536,78 @@ inline void createRaytracingPipeline(MainContext& context) {
     properties.pNext = &rayTracingProperties;
     context.usedPhyDevice.getProperties2(&properties);
     uint32_t handleSize = rayTracingProperties.shaderGroupHandleSize;
-    //todo remove magic number
+
+
+    //todo remove magic number
     uint32_t groupCount = 3;
-    std::vector<uint8_t> shaderHandles(groupCount * handleSize);    auto handels = context.device.getRayTracingShaderGroupHandlesKHR(context.raytraceExt.mainRayPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
+    std::vector<uint8_t> shaderHandles(groupCount * handleSize);
+    auto handels = context.device.getRayTracingShaderGroupHandlesKHR(context.raytraceExt.mainRayPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
+
     vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst;
     uint32_t handleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
-    uint32_t baseAlignment = rayTracingProperties.shaderGroupBaseAlignment;    auto alignUp = [](uint32_t value, uint32_t alignment)
+    uint32_t baseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
+
+    auto alignUp = [](uint32_t value, uint32_t alignment)
         {
-            return (value + alignment - 1) &                ~(alignment - 1);
-        };
+            return (value + alignment - 1) &
+                ~(alignment - 1);
+        };
+
     uint32_t handleStride = alignUp(handleSize, handleAlignment);
     uint32_t raygenSize = handleStride;
     uint32_t missSize = handleStride;
     uint32_t hitSize = handleStride;
     uint32_t missOffset = alignUp(raygenSize, baseAlignment);
-    uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);    uint32_t sbtSize = hitOffset + hitSize;
+    uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
+    uint32_t sbtSize = hitOffset + hitSize;
+
     vk::BufferCreateInfo sbtBufferInfo{};
     sbtBufferInfo.size = sbtSize;
     sbtBufferInfo.usage = usage;
-    sbtBufferInfo.sharingMode = vk::SharingMode::eExclusive;
+    sbtBufferInfo.sharingMode = vk::SharingMode::eExclusive;
+
+
     vk::Buffer sbtBuffer = context.device.createBuffer(sbtBufferInfo);
-    vk::MemoryRequirements memReq = context.device.getBufferMemoryRequirements(sbtBuffer);    vk::MemoryAllocateFlagsInfo flags{};
-    flags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+    vk::MemoryRequirements memReq = context.device.getBufferMemoryRequirements(sbtBuffer);
+    vk::MemoryAllocateFlagsInfo flags{};
+    flags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
+
     vk::MemoryAllocateInfo allocInfoSBT{};
     allocInfoSBT.allocationSize = memReq.size;
     allocInfoSBT.memoryTypeIndex = context.hostVisibleDeviceLocalMemory;
     allocInfoSBT.pNext = &flags;
     vk::DeviceMemory sbtMemory = context.device.allocateMemory(allocInfoSBT);
-    context.device.bindBufferMemory(sbtBuffer, sbtMemory, 0);
+    context.device.bindBufferMemory(sbtBuffer, sbtMemory, 0);
+
     void* mapped = context.device.mapMemory(sbtMemory, 0, sbtSize);
     memset(mapped, 0, sbtSize);
-    memcpy(static_cast<char*>(mapped), shaderHandles.data(), handleSize);    memcpy(static_cast<char*>(mapped) + missOffset, shaderHandles.data() + handleSize, handleSize);    memcpy(static_cast<char*>(mapped) + hitOffset, shaderHandles.data() + 2 * handleSize, handleSize);
-    context.device.unmapMemory(sbtMemory);
-    vk::DeviceAddress sbtAddress = context.device.getBufferAddress(vk::BufferDeviceAddressInfo{ sbtBuffer }, context.dynamicLoader);
+    memcpy(static_cast<char*>(mapped), shaderHandles.data(), handleSize);
+    memcpy(static_cast<char*>(mapped) + missOffset, shaderHandles.data() + handleSize, handleSize);
+    memcpy(static_cast<char*>(mapped) + hitOffset, shaderHandles.data() + 2 * handleSize, handleSize);
+
+    context.device.unmapMemory(sbtMemory);
+
+    vk::DeviceAddress sbtAddress = context.device.getBufferAddress(vk::BufferDeviceAddressInfo{ sbtBuffer }, context.dynamicLoader);
+
     context.raytraceExt.raygenRegion.deviceAddress = sbtAddress;
     context.raytraceExt.raygenRegion.stride = handleStride;
-    context.raytraceExt.raygenRegion.size = handleStride;
+    context.raytraceExt.raygenRegion.size = handleStride;
+
     context.raytraceExt.missRegion.deviceAddress = sbtAddress + missOffset;
     context.raytraceExt.missRegion.stride = handleStride;
-    context.raytraceExt.missRegion.size = handleStride;    context.raytraceExt.hitRegion.deviceAddress = sbtAddress + hitOffset;    context.raytraceExt.hitRegion.stride = handleStride;
+    context.raytraceExt.missRegion.size = handleStride;
+
+    context.raytraceExt.hitRegion.deviceAddress = sbtAddress + hitOffset;
+    context.raytraceExt.hitRegion.stride = handleStride;
     context.raytraceExt.hitRegion.size = handleStride;
-}inline void createTLA(MainContext& context, std::span<const OutputModel> outModels) {
+}
+
+inline void createTLA(MainContext& context, std::span<const OutputModel> outModels) {
     vk::BufferCreateInfo tlasInstanceBufferInfo{};
     tlasInstanceBufferInfo.size = sizeof(vk::AccelerationStructureInstanceKHR) * outModels.size();
     tlasInstanceBufferInfo.usage = vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress;
-    vk::Buffer instanceBuffer = context.device.createBuffer(tlasInstanceBufferInfo);    auto requirements = context.device.getBufferMemoryRequirements(instanceBuffer);
+    vk::Buffer instanceBuffer = context.device.createBuffer(tlasInstanceBufferInfo);
+    auto requirements = context.device.getBufferMemoryRequirements(instanceBuffer);
     vk::MemoryAllocateFlagsInfo tlasFlags{};
     tlasFlags.flags = vk::MemoryAllocateFlagBits::eDeviceAddress;
     vk::MemoryAllocateInfo alloc{};

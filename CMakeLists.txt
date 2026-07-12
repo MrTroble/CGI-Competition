@@ -10,6 +10,9 @@ project("TAA-Main")
 
 find_package(Vulkan 1.4 REQUIRED COMPONENTS glslang shaderc_combined SPIRV-Tools)
 
+#add_compile_options(-fsanitize=address)
+#add_link_options(-fsanitize=address)
+
 message(${Vulkan_GLSLC_EXECUTABLE})
 
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/shader")
