@@ -68,71 +68,6 @@ inline vk::Pipeline createPipeline(MainContext& context, const bool doubeleSided
 	// TODO Check
 	return result.value;
 }
-inline vk::Pipeline createRaytracingPipeline(MainContext& context) {
-	std::array shaderStagesLoaded = {
-		loadShaderStages(context,  "raygen.rgen.spv"),
-		loadShaderStages(context,  "miss.rmiss.spv"),
-		loadShaderStages(context, "closesthit.rchit.spv")
-	};
-
-	std::array<vk::DescriptorSetLayoutBinding, 2> bindings{};
-	bindings[0].binding = 0;
-	bindings[0].descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
-	bindings[0].descriptorCount = 1;
-	bindings[0].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
-
-	bindings[1].binding = 1;
-	bindings[1].descriptorType = vk::DescriptorType::eStorageImage;
-	bindings[1].descriptorCount = 1;
-	bindings[1].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
-
-	vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{};
-	desriptorLayoutInfo.setBindingCount(bindings.size());
-	desriptorLayoutInfo.setPBindings(bindings.data());
-
-	auto descriptorSetLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
-
-	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-
-	pipelineLayoutInfo.setSetLayoutCount(1);
-	pipelineLayoutInfo.setPSetLayouts(&descriptorSetLayout);
-
-	auto pipelineLayout = context.device.createPipelineLayout(pipelineLayoutInfo);
-
-	vk::RayTracingShaderGroupCreateInfoKHR raygenGroup{};
-	raygenGroup.setType(vk::RayTracingShaderGroupTypeKHR::eGeneral);
-	raygenGroup.setGeneralShader(0);
-	raygenGroup.setClosestHitShader(VK_SHADER_UNUSED_KHR);
-	raygenGroup.setAnyHitShader(VK_SHADER_UNUSED_KHR);
-	raygenGroup.setIntersectionShader(VK_SHADER_UNUSED_KHR);
-
-	vk::RayTracingShaderGroupCreateInfoKHR missGroup{};
-	missGroup.setType(vk::RayTracingShaderGroupTypeKHR::eGeneral);
-	missGroup.setGeneralShader(1);
-	missGroup.setClosestHitShader(VK_SHADER_UNUSED_KHR);
-	missGroup.setAnyHitShader(VK_SHADER_UNUSED_KHR);
-	missGroup.setIntersectionShader(VK_SHADER_UNUSED_KHR);
-
-	vk::RayTracingShaderGroupCreateInfoKHR hitGroup{};
-	hitGroup.setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
-	hitGroup.setGeneralShader(2);
-	hitGroup.setGeneralShader(VK_SHADER_UNUSED_KHR);
-	hitGroup.setAnyHitShader(VK_SHADER_UNUSED_KHR);
-	hitGroup.setIntersectionShader(VK_SHADER_UNUSED_KHR);
-
-	std::array<vk::RayTracingShaderGroupCreateInfoKHR, 3> groups = { raygenGroup, missGroup, hitGroup };
-
-	vk::RayTracingPipelineCreateInfoKHR pipelineInfo{};
-	pipelineInfo.setStageCount(shaderStagesLoaded.size());
-	pipelineInfo.setPStages(shaderStagesLoaded.data());
-	pipelineInfo.setGroupCount(groups.size());
-	pipelineInfo.setPGroups(groups.data());
-	pipelineInfo.setMaxPipelineRayRecursionDepth(1);
-	pipelineInfo.setLayout(pipelineLayout);
-
-	auto pipeline = context.device.createRayTracingPipelineKHR({}, {}, pipelineInfo, nullptr, context.dynamicLoader);
-	return pipeline.value;
-}
 
 inline glm::mat4 matrixFromNode(tinygltf::Node& node) {
 	if (node.matrix.empty()) {
@@ -382,12 +317,13 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			}
 		}
 	}
+	out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout);
 
 	RaytracingExtHolder extHolder;
 
 	std::array<vk::AccelerationStructureBuildGeometryInfoKHR, 1> geometryInfo = {
 		vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eBottomLevel}
-		//,vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eTopLevel} 
+	   //,vk::AccelerationStructureBuildGeometryInfoKHR{vk::AccelerationStructureTypeKHR::eTopLevel} 
 	};
 	std::array<vk::AccelerationStructureBuildRangeInfoKHR*, 1> buildRanges;
 	buildRanges[0] = structureBuildRange.data();
@@ -557,51 +493,10 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	cmd.end();
 	context.queue.submit(submitInfo, context.fence);
 
-	auto raytracingPipeline = createRaytracingPipeline(context);
-
-	vk::DescriptorSetLayoutBinding tlasBinding{};
-	tlasBinding.binding = 0;
-	tlasBinding.descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
-	tlasBinding.descriptorCount = 1;
-	tlasBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
-
-	vk::DescriptorSetLayoutBinding imageBinding{};
-	imageBinding.binding = 1;
-	imageBinding.descriptorType = vk::DescriptorType::eStorageImage;
-	imageBinding.descriptorCount = 1;
-	imageBinding.stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
-
-	std::array<vk::DescriptorSetLayoutBinding, 2> bindings = { tlasBinding,imageBinding };
-
-	vk::DescriptorSetLayoutCreateInfo layoutInfo{};
-	layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
-	layoutInfo.pBindings = bindings.data();
-
-	vk::DescriptorSetLayout descriptorSetLayoutRaytracing = context.device.createDescriptorSetLayout(layoutInfo);
-
-	std::array<vk::DescriptorPoolSize, 2> poolSizes =
-	{
-		vk::DescriptorPoolSize{
-			vk::DescriptorType::eAccelerationStructureKHR,
-			1
-		},
-		vk::DescriptorPoolSize{
-			vk::DescriptorType::eStorageImage,
-			1
-		}
-	};
-
-	vk::DescriptorPoolCreateInfo poolInfo{};
-	poolInfo.maxSets = 1;
-	poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
-	poolInfo.pPoolSizes = poolSizes.data();
-	vk::DescriptorPool descriptorPool = context.device.createDescriptorPool(poolInfo);
-
 	vk::DescriptorSetAllocateInfo allocInfo{};
-
-	allocInfo.descriptorPool = descriptorPool;
+	allocInfo.descriptorPool = context.raytraceExt.pool;
 	allocInfo.descriptorSetCount = 1;
-	allocInfo.pSetLayouts = &descriptorSetLayoutRaytracing;
+	allocInfo.setSetLayouts(context.raytraceExt.descLayout);
 
 	vk::DescriptorSet descriptorSet = context.device.allocateDescriptorSets(allocInfo)[0];
 
@@ -669,7 +564,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	//todo remove magic number
 	uint32_t groupCount = 3;
 	std::vector<uint8_t> shaderHandles(groupCount * handleSize);
-	auto handels = context.device.getRayTracingShaderGroupHandlesKHR(raytracingPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
+	auto handels = context.device.getRayTracingShaderGroupHandlesKHR(context.raytraceExt.mainRayPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
 	vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst;
 
 	uint32_t handleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
@@ -730,13 +625,6 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 
 	vk::StridedDeviceAddressRegionKHR callableRegion{};
 
-	vk::PipelineLayoutCreateInfo pipelineLayoutInfo{};
-
-	pipelineLayoutInfo.setSetLayoutCount(1);
-	pipelineLayoutInfo.setPSetLayouts(&descriptorSetLayoutRaytracing);
-
-	auto pipelineLayout = context.device.createPipelineLayout(pipelineLayoutInfo);
-
 	//Test---------------------
 	context.device.waitForFences(context.fence, true, UINT64_MAX);
 	context.device.resetFences(context.fence);
@@ -744,9 +632,9 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	vk::CommandBufferBeginInfo beginInfoThree(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 	cmd.begin(beginInfoThree);
 
-	cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, raytracingPipeline);
+	cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayPipeline);
 
-	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, pipelineLayout, 0, descriptorSet, {});
+	cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayLayout, 0, descriptorSet, {});
 
 	cmd.traceRaysKHR(raygenRegion, missRegion, hitRegion, callableRegion, context.currentExtent.width, context.currentExtent.height, 1, context.dynamicLoader);
 
@@ -756,8 +644,6 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	//---------------------------
 
 	std::cout << "Finished loading Ray ext!" << std::endl;
-
-	out.modelBuffer = createArrayBuffer<PerNodeData>(context, nodeMatrix, context.modelLayout);
 
 	for (auto& sampler : model.samplers) {
 		vk::SamplerCreateInfo samplerCreate(vk::SamplerCreateFlags{});
@@ -796,7 +682,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 		out.pipes.push_back(createPipeline(context, material.doubleSided, systemUsed, config.fillMode));
 		descriptorID++;
 	}
-	createRaytracingPipeline(context);
+
 	const auto cameraDesc = context.cameraNode.descriptors.back();
 
 	size_t frameBufferID = 0;

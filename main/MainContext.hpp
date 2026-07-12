@@ -84,6 +84,16 @@ struct RaytracingExtHolder {
 	vk::AccelerationStructureKHR accelerationStructures[2];
 };
 
+struct RaytracingMainContext {
+	vk::Pipeline mainRayPipeline;
+	vk::DescriptorSetLayout descLayout;
+	vk::DescriptorSetLayout descImageLayout;
+	vk::PipelineLayout mainRayLayout;
+	vk::DescriptorPool pool;
+	vk::DescriptorPool imagePool;
+	std::vector<vk::DescriptorSet> imageSet;
+};
+
 struct MainContext {
 	vk::Instance instance;
 	vk::Device device;
@@ -106,7 +116,8 @@ struct MainContext {
 	vk::Fence fence;
 	vk::DescriptorPool descriptorPool;
 	vk::detail::DispatchLoaderDynamic dynamicLoader;
-	RaytracingExtHolder raytraceExt;
+
+	RaytracingMainContext raytraceExt;
 
 	vk::DescriptorSetLayout modelLayout = nullptr;
 	vk::DescriptorSetLayout cameraLayout = nullptr;
