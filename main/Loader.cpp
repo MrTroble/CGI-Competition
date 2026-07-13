@@ -379,9 +379,9 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
         createInfo.usage = vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eStorageBuffer;
         createInfo.setSize(buildSizeInfo.buildScratchSize);
         const auto scratchbuffer = context.device.createBuffer(createInfo);
-        const auto scratchbufferRequ = context.device.getBufferMemoryRequirements(vbuffer);
+        const auto scratchbufferRequ = context.device.getBufferMemoryRequirements(scratchbuffer);
 
-        allocInfo.allocationSize = scratchbufferRequ.size;
+        allocInfo.allocationSize = alignUp(scratchbufferRequ.size, scratchbufferRequ.alignment);
         const auto memoryScratch = context.device.allocateMemory(allocInfo);
         context.device.bindBufferMemory(scratchbuffer, memoryScratch, 0);
         extHolder.scratch[indexLocal] = scratchbuffer;
