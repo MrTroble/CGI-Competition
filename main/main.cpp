@@ -516,7 +516,7 @@ inline void createRaytracingPipeline(MainContext& context) {
     pipelineInfo.setLayout(context.raytraceExt.mainRayLayout);
 
     auto pipeline = context.device.createRayTracingPipelineKHR({}, {}, pipelineInfo, nullptr, context.dynamicLoader);
-    context.raytraceExt.mainRayPipeline = *pipeline;
+    context.raytraceExt.mainRayPipeline = pipeline.value;
 
     vk::DescriptorPoolSize imagePoolSize{
         vk::DescriptorType::eStorageImage,
@@ -559,12 +559,6 @@ inline void createRaytracingPipeline(MainContext& context) {
     vk::BufferUsageFlags usage = vk::BufferUsageFlagBits::eShaderBindingTableKHR | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eTransferDst;
     uint32_t handleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
     uint32_t baseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
-
-    auto alignUp = [](uint32_t value, uint32_t alignment)
-        {
-            return (value + alignment - 1) &
-                ~(alignment - 1);
-        };
 
     uint32_t handleStride = alignUp(handleSize, handleAlignment);
     uint32_t raygenSize = handleStride;
