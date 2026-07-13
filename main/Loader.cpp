@@ -443,6 +443,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     std::vector descSetsToUse(model.materials.size(), context.textureLayout);
     vk::DescriptorSetAllocateInfo descallocateInfo(out.imageDescPool, descSetsToUse);
     out.imageSets = context.device.allocateDescriptorSets(descallocateInfo);
+
     size_t descriptorID = 0;
     for (auto& material : model.materials) {
         auto& texInfo = material.pbrMetallicRoughness.baseColorTexture;

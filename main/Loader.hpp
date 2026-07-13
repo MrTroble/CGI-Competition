@@ -5,6 +5,7 @@
 #include "MainContext.hpp"
 #include <tiny_gltf.h>
 #include "glm/glm.hpp"
+#include "Shared.hpp"
 
 struct OutputModel {
 	std::vector<vk::Buffer> buffers;

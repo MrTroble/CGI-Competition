@@ -15,6 +15,8 @@ namespace fs = std::filesystem;
 #define NUMBER_OF_BIG_LIGHTS 64
 #define MAX_TILLING 8
 
+#define MAX_IMAGE_TEXTURES_RTX 256
+
 struct LightList {
 	uint32_t ids[NUMBER_OF_LIGHTS];
 	uint32_t amount;
@@ -102,10 +104,13 @@ struct RaytracingMainContext {
 	vk::Pipeline mainRayPipeline;
 	vk::DescriptorSetLayout descLayout;
 	vk::DescriptorSetLayout descImageLayout;
+	vk::DescriptorSetLayout descTextureLayout;
+
 	vk::PipelineLayout mainRayLayout;
 	vk::DescriptorPool pool;
 	vk::DescriptorPool imagePool;
 	std::vector<vk::DescriptorSet> imageSet;
+	vk::DescriptorSet textureSet;
 
 	vk::AccelerationStructureKHR topLevelStructure;
 	vk::DescriptorSet topLevelDescSet;

@@ -470,7 +470,7 @@ inline void createRaytracingPipeline(MainContext& context) {
         loadShaderStages(context, "closesthit.rchit.spv")
     };
 
-    std::array<vk::DescriptorSetLayoutBinding, 3> bindings{};
+    std::array<vk::DescriptorSetLayoutBinding, 4> bindings{};
     bindings[0].binding = 0;
     bindings[0].descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
     bindings[0].descriptorCount = 1;
@@ -486,12 +486,20 @@ inline void createRaytracingPipeline(MainContext& context) {
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
+    bindings[3].binding = 0;
+    bindings[3].descriptorType = vk::DescriptorType::eSampledImage;
+    bindings[3].descriptorCount = MAX_IMAGE_TEXTURES_RTX;
+    bindings[3].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+
     vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, 2, bindings.data() };
     context.raytraceExt.descLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
     desriptorLayoutInfo.setBindings(bindings[2]);
     context.raytraceExt.descImageLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
+    desriptorLayoutInfo.setBindings(bindings[3]);
+    context.raytraceExt.descTextureLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
 
-    std::array descriptorLayoutsLocal = { context.raytraceExt.descImageLayout, context.raytraceExt.descLayout };
+    std::array descriptorLayoutsLocal = { context.raytraceExt.descImageLayout,
+                            context.raytraceExt.descLayout, context.raytraceExt.descTextureLayout };
     vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ {}, descriptorLayoutsLocal };
     context.raytraceExt.mainRayLayout = context.device.createPipelineLayout(pipelineLayoutInfo);
 
@@ -505,7 +513,6 @@ inline void createRaytracingPipeline(MainContext& context) {
 
     vk::RayTracingShaderGroupCreateInfoKHR hitGroup{};
     hitGroup.setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
-    hitGroup.setAnyHitShader(2);
     hitGroup.setClosestHitShader(2);
     hitGroup.setGeneralShader(2);
 
@@ -533,6 +540,9 @@ inline void createRaytracingPipeline(MainContext& context) {
     }, vk::DescriptorPoolSize{
         vk::DescriptorType::eUniformBuffer,
         MAX_POOL
+    }, vk::DescriptorPoolSize{
+        vk::DescriptorType::eSampledImage,
+        MAX_IMAGE_TEXTURES_RTX
     } };
 
     vk::DescriptorPoolCreateInfo poolInfo{ {}, MAX_POOL, mainPoolInfos };
@@ -666,7 +676,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     tlasCreateInfo.type = vk::AccelerationStructureTypeKHR::eTopLevel;
     tlasCreateInfo.size = tlasSize.accelerationStructureSize;
     tlasCreateInfo.buffer = tlasBuffer;
-    context.raytraceExt.topLevelStructure = context.device.createAccelerationStructureKHR(tlasCreateInfo, nullptr, context.dynamicLoader);;
+    context.raytraceExt.topLevelStructure = context.device.createAccelerationStructureKHR(tlasCreateInfo, nullptr, context.dynamicLoader);
     tlasBuildInfo.dstAccelerationStructure = context.raytraceExt.topLevelStructure;
 
     vk::BufferCreateInfo scratchInfo{};
@@ -711,7 +721,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     vk::CommandBufferBeginInfo cmdBeginInfo(vk::CommandBufferUsageFlags{});
     cmd.begin(cmdBeginInfo);
 
-    vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{(uint32_t)outModels.size()};
+    vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{ (uint32_t)outModels.size() };
     cmd.buildAccelerationStructuresKHR(tlasBuildInfo, &rangeInfo, context.dynamicLoader);
 
     cmd.end();
@@ -721,6 +731,43 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     context.queue.waitIdle();
 
     context.device.destroy(pool);
+
+    context.raytraceExt.textureSet = context.device.allocateDescriptorSets({ context.raytraceExt.pool,
+        context.raytraceExt.descTextureLayout }).back();
+    std::vector<vk::DescriptorImageInfo> imageInfos;
+    std::vector<vk::Sampler> samplerToDesc;
+    std::vector<vk::ImageView> viewsToDesc;
+    std::vector<std::pair<size_t, size_t>> startIndexArray;
+    for (auto& model : outModels)
+    {
+        const auto sIndex = samplerToDesc.size();
+        const auto vIndex = viewsToDesc.size();
+        startIndexArray.emplace_back(vIndex, sIndex);
+        samplerToDesc.resize(sIndex + model.sampler.size());
+        viewsToDesc.resize(vIndex + model.imageViews.size());
+        std::copy(model.imageViews.begin(), model.imageViews.end(), viewsToDesc.begin() + vIndex);
+        std::copy(model.sampler.begin(), model.sampler.end(), samplerToDesc.begin() + sIndex);
+    }
+
+    if (!samplerToDesc.empty()) {
+        const auto sampler = samplerToDesc[0]; // TODO BETTER WAY
+        for (auto& tex : viewsToDesc) {
+            imageInfos.emplace_back(sampler, tex, vk::ImageLayout::eShaderReadOnlyOptimal);
+        }
+        const auto oldSizeC = imageInfos.size();
+        if (oldSizeC < MAX_IMAGE_TEXTURES_RTX) {
+            imageInfos.resize(MAX_IMAGE_TEXTURES_RTX);
+            std::fill(imageInfos.begin() + oldSizeC, imageInfos.end(), imageInfos[0]);
+        }
+        else {
+            if (oldSizeC > MAX_IMAGE_TEXTURES_RTX) {
+                std::cerr << "Warning!: Max textures are over the limit!" << std::endl;
+            }
+        }
+        vk::WriteDescriptorSet arrayDesc(context.raytraceExt.textureSet, 0, 0, vk::DescriptorType::eCombinedImageSampler,
+            imageInfos);
+        context.device.updateDescriptorSets(arrayDesc, {});
+    }
 }
 
 inline void renderFrame(MainContext& context, std::span<const OutputModel> models) {
@@ -821,8 +868,10 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
     else {
         const auto targetImage = imageID % 2 == 0 ? context.resolve2Image : context.resolve1Image;
         cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayPipeline);
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayLayout, 0, { context.raytraceExt.imageSet[imageID % 2], context.raytraceExt.topLevelDescSet }, {});
-        cmd.traceRaysKHR(context.raytraceExt.raygenRegion, context.raytraceExt.missRegion, context.raytraceExt.hitRegion, context.raytraceExt.callableRegion, context.currentExtent.width, context.currentExtent.height, 1, context.dynamicLoader);
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayLayout, 0, 
+            { context.raytraceExt.imageSet[imageID % 2], context.raytraceExt.topLevelDescSet, context.raytraceExt.textureSet }, {});
+        cmd.traceRaysKHR(context.raytraceExt.raygenRegion, context.raytraceExt.missRegion, context.raytraceExt.hitRegion,
+            context.raytraceExt.callableRegion, context.currentExtent.width, context.currentExtent.height, 1, context.dynamicLoader);
         vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
         vk::ImageCopy imageCopy(subresource, {}, subresource, {}, vk::Extent3D(context.currentExtent, 1.0f));
         cmd.copyImage(
