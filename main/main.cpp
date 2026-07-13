@@ -507,6 +507,7 @@ inline void createRaytracingPipeline(MainContext& context) {
     hitGroup.setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
     hitGroup.setAnyHitShader(2);
     hitGroup.setClosestHitShader(2);
+    hitGroup.setGeneralShader(2);
 
     std::array<vk::RayTracingShaderGroupCreateInfoKHR, 3> groups = { raygenGroup, missGroup, hitGroup };
 
