@@ -1284,6 +1284,8 @@ int main()
     vk::PhysicalDeviceDynamicRenderingFeatures dynamicFeature(true);
     vk::PhysicalDeviceFeatures2 physicalDeviceFeatures;
     physicalDeviceFeatures.features.fillModeNonSolid = true;
+    vk::PhysicalDeviceDescriptorIndexingFeaturesEXT indexingFeature;
+    indexingFeature.setShaderSampledImageArrayNonUniformIndexing(true);
     vk::PhysicalDeviceBufferDeviceAddressFeatures addressFeature;
     addressFeature.bufferDeviceAddress = true;
     addressFeature.bufferDeviceAddressCaptureReplay = true;
@@ -1297,6 +1299,7 @@ int main()
     physicalDeviceFeatures.pNext = &dynamicFeature;
     accelFeaturesInfo.pNext = &addressFeature;
     addressFeature.pNext = &rayTracingPipelineFeatures;
+    rayTracingPipelineFeatures.pNext = &indexingFeature;
     vk::DeviceCreateInfo deviceCreateInfo({}, deviceQueueCreateInfo, {}, deviceExtensions);
     deviceCreateInfo.pNext = &physicalDeviceFeatures;
     context.device = context.usedPhyDevice.createDevice(deviceCreateInfo);
