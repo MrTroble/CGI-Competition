@@ -330,7 +330,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
                 currentData.flags = vk::GeometryFlagBitsKHR::eOpaque;
                 currentData.geometry.triangles.indexType = (indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT ? vk::IndexType::eUint16 : vk::IndexType::eUint32);
                 const auto addressIndex = context.device.getBufferAddress({ out.buffers[indexAccess.bufferView] }, context.dynamicLoader);
-                currentData.geometry.triangles.indexData.deviceAddress = addressIndex;
+                currentData.geometry.triangles.indexData.deviceAddress = addressIndex + indexAccess.byteOffset;
                 currentData.geometry.triangles.vertexFormat = vk::Format::eR32G32B32Sfloat;
                 const auto [posId, posOff] = getFromInput(model, primitive, "POSITION");
                 const auto addressVertex = context.device.getBufferAddress({ out.buffers[posId] }, context.dynamicLoader);
@@ -343,6 +343,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
                 maxPrimitive.push_back(primitiveSize);
                 vk::AccelerationStructureBuildRangeInfoKHR primitveRanges{ primitiveSize, 0, 0, 0 };
                 structureBuildRange.push_back(primitveRanges);
+                out.rtxGeodata.push_back(GeometryData{primitive.material});
             }
         }
     }
@@ -456,6 +457,10 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
             descImageInfo.sampler = out.sampler[albedoTex.sampler];
             context.device.updateDescriptorSets(descWriteSet, {});
             systemUsed = "USE_ALBEDO";
+            out.rtxMaterials.push_back(MaterialData{ albedoTex.source, albedoTex.sampler });
+        }
+        else {
+            out.rtxMaterials.push_back(MaterialData{ -1, -1});
         }
         auto& normalTexInfo = material.normalTexture;
         if (normalTexInfo.index != -1) {

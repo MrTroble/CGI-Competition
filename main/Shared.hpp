@@ -5,13 +5,13 @@
 using uint = unsigned int;
 #endif
 
-struct Material {
-    uint texID;
-    uint samplerID;
+struct MaterialData {
+    int texID;
+    int samplerID;
 };
 
 struct GeometryData {
-    uint materialID;
+    int materialID;
 };
 
 struct InstanceOffsets {

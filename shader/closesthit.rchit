@@ -18,7 +18,7 @@ layout(binding=1, set = 2) readonly buffer InstanceOffsetBlock
 
 layout(binding=2, set = 2) readonly buffer MaterialsBlock
 {
-  Material[] material;
+  MaterialData[] material;
 } M;
 
 layout(binding=3, set = 2) readonly buffer GeometryDataBlock
@@ -28,5 +28,17 @@ layout(binding=3, set = 2) readonly buffer GeometryDataBlock
 
 void main()
 {
-    payload = vec3(1.0, 0.0, 0.0); // Rot
+    InstanceOffsets off = I.offsets[gl_InstanceID];
+    GeometryData geo = G.geometry[gl_GeometryIndexEXT + off.geometryOffset];
+    if(geo.materialID < 0) {
+       payload = vec3(1.0, 0.0, 1.0);
+       return;
+    }
+    MaterialData mat = M.material[geo.materialID + off.materialOffset];
+    if(mat.texID < 0) {
+        payload = vec3(1.0, 0.0, 0.0);
+        return;
+    }
+    vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], attribs);
+    payload = color.xyz;
 }

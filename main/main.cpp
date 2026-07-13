@@ -488,25 +488,25 @@ inline void createRaytracingPipeline(MainContext& context) {
     bindings[2].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
     std::array<vk::DescriptorSetLayoutBinding, 4> bindingsTextures{};
-    bindings[0].binding = 0;
-    bindings[0].descriptorType = vk::DescriptorType::eSampledImage;
-    bindings[0].descriptorCount = MAX_IMAGE_TEXTURES_RTX;
-    bindings[0].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+    bindingsTextures[0].binding = 0;
+    bindingsTextures[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
+    bindingsTextures[0].descriptorCount = MAX_IMAGE_TEXTURES_RTX;
+    bindingsTextures[0].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
-    bindings[1].binding = 1;
-    bindings[1].descriptorType = vk::DescriptorType::eStorageBuffer;
-    bindings[1].descriptorCount = 1;
-    bindings[1].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+    bindingsTextures[1].binding = 1;
+    bindingsTextures[1].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindingsTextures[1].descriptorCount = 1;
+    bindingsTextures[1].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
-    bindings[2].binding = 2;
-    bindings[2].descriptorType = vk::DescriptorType::eStorageBuffer;
-    bindings[2].descriptorCount = 1;
-    bindings[2].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+    bindingsTextures[2].binding = 2;
+    bindingsTextures[2].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindingsTextures[2].descriptorCount = 1;
+    bindingsTextures[2].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
-    bindings[3].binding = 3;
-    bindings[3].descriptorType = vk::DescriptorType::eStorageBuffer;
-    bindings[3].descriptorCount = 1;
-    bindings[3].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+    bindingsTextures[3].binding = 3;
+    bindingsTextures[3].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindingsTextures[3].descriptorCount = 1;
+    bindingsTextures[3].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
     vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, 2, bindings.data() };
     context.raytraceExt.descLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
@@ -558,8 +558,11 @@ inline void createRaytracingPipeline(MainContext& context) {
         vk::DescriptorType::eUniformBuffer,
         MAX_POOL
     }, vk::DescriptorPoolSize{
-        vk::DescriptorType::eSampledImage,
+        vk::DescriptorType::eCombinedImageSampler,
         MAX_IMAGE_TEXTURES_RTX
+    } , vk::DescriptorPoolSize{
+        vk::DescriptorType::eStorageBuffer,
+        3
     } };
 
     vk::DescriptorPoolCreateInfo poolInfo{ {}, MAX_POOL, mainPoolInfos };
@@ -763,7 +766,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 
     std::vector<vk::Sampler> samplerToDesc;
     std::vector<vk::ImageView> viewsToDesc;
-    std::vector<Material> materialData;
+    std::vector<MaterialData> materialData;
     std::vector<GeometryData> geometryData;
 
     std::vector<InstanceOffsets> startIndexArray;
@@ -771,7 +774,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     {
         InstanceOffsets offsetsL;
         offsetsL.textureOffset = expand<vk::ImageView>(viewsToDesc, model.imageViews);
-        offsetsL.materialOffset = expand<Material>(materialData, model.rtxMaterials);
+        offsetsL.materialOffset = expand<MaterialData>(materialData, model.rtxMaterials);
         offsetsL.geometryOffset = expand<GeometryData>(geometryData, model.rtxGeodata);
         offsetsL.samplerOffset = expand<vk::Sampler>(samplerToDesc, model.sampler);
         startIndexArray.push_back(offsetsL);
@@ -779,7 +782,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 
     context.raytraceExt.instanceBuffer = createBuffer<InstanceOffsets>(context, startIndexArray, vk::BufferUsageFlagBits::eStorageBuffer);
     context.raytraceExt.geoBuffer = createBuffer<GeometryData>(context, geometryData, vk::BufferUsageFlagBits::eStorageBuffer);
-    context.raytraceExt.materialBuffer = createBuffer<Material>(context, materialData, vk::BufferUsageFlagBits::eStorageBuffer);
+    context.raytraceExt.materialBuffer = createBuffer<MaterialData>(context, materialData, vk::BufferUsageFlagBits::eStorageBuffer);
     vk::DescriptorBufferInfo bufferInfoLocal(context.raytraceExt.instanceBuffer.buffer, 0, VK_WHOLE_SIZE);
     vk::WriteDescriptorSet arrayDescLocal(context.raytraceExt.textureSet, 1, 0, vk::DescriptorType::eStorageBuffer,
         {}, bufferInfoLocal);

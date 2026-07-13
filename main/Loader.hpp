@@ -26,7 +26,7 @@ struct OutputModel {
 
 	RaytracingExtHolder rayHolder;
 
-	std::vector<Material> rtxMaterials;
+	std::vector<MaterialData> rtxMaterials;
 	std::vector<GeometryData> rtxGeodata;
 };
 
