@@ -25,6 +25,9 @@ struct OutputModel {
 	tinygltf::Model backupModel;
 
 	RaytracingExtHolder rayHolder;
+
+	std::vector<Material> rtxMaterials;
+	std::vector<GeometryData> rtxGeodata;
 };
 
 struct ModelConfig {

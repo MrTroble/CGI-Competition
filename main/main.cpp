@@ -13,6 +13,7 @@
 #include "lights.hpp"
 #include "trackball.hpp"
 #include "rng.hpp"
+#include "Shared.hpp"
 
 inline void notifyViewMatrixChanged(MainContext& context, bool applyJitter = true) {
     const float aspect = (float)context.currentExtent.width / context.currentExtent.height;
@@ -486,16 +487,32 @@ inline void createRaytracingPipeline(MainContext& context) {
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-    bindings[3].binding = 0;
-    bindings[3].descriptorType = vk::DescriptorType::eSampledImage;
-    bindings[3].descriptorCount = MAX_IMAGE_TEXTURES_RTX;
+    std::array<vk::DescriptorSetLayoutBinding, 4> bindingsTextures{};
+    bindings[0].binding = 0;
+    bindings[0].descriptorType = vk::DescriptorType::eSampledImage;
+    bindings[0].descriptorCount = MAX_IMAGE_TEXTURES_RTX;
+    bindings[0].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+
+    bindings[1].binding = 1;
+    bindings[1].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindings[1].descriptorCount = 1;
+    bindings[1].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+
+    bindings[2].binding = 2;
+    bindings[2].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindings[2].descriptorCount = 1;
+    bindings[2].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+
+    bindings[3].binding = 3;
+    bindings[3].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindings[3].descriptorCount = 1;
     bindings[3].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
     vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, 2, bindings.data() };
     context.raytraceExt.descLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
     desriptorLayoutInfo.setBindings(bindings[2]);
     context.raytraceExt.descImageLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
-    desriptorLayoutInfo.setBindings(bindings[3]);
+    desriptorLayoutInfo.setBindings(bindingsTextures);
     context.raytraceExt.descTextureLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
 
     std::array descriptorLayoutsLocal = { context.raytraceExt.descImageLayout,
@@ -620,6 +637,14 @@ inline void createRaytracingPipeline(MainContext& context) {
     context.raytraceExt.hitRegion.size = handleStride;
 }
 
+template<class T>
+inline size_t expand(std::vector<T>& toExpand, std::span<const T> values) {
+    const auto sIndex = toExpand.size();
+    toExpand.resize(sIndex + values.size());
+    std::copy(values.begin(), values.end(), toExpand.begin() + sIndex);
+    return sIndex;
+}
+
 inline void createTLA(MainContext& context, std::span<const OutputModel> outModels) {
     vk::BufferCreateInfo tlasInstanceBufferInfo{};
     tlasInstanceBufferInfo.size = sizeof(vk::AccelerationStructureInstanceKHR) * outModels.size();
@@ -735,19 +760,36 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     context.raytraceExt.textureSet = context.device.allocateDescriptorSets({ context.raytraceExt.pool,
         context.raytraceExt.descTextureLayout }).back();
     std::vector<vk::DescriptorImageInfo> imageInfos;
+
     std::vector<vk::Sampler> samplerToDesc;
     std::vector<vk::ImageView> viewsToDesc;
-    std::vector<std::pair<size_t, size_t>> startIndexArray;
+    std::vector<Material> materialData;
+    std::vector<GeometryData> geometryData;
+
+    std::vector<InstanceOffsets> startIndexArray;
     for (auto& model : outModels)
     {
-        const auto sIndex = samplerToDesc.size();
-        const auto vIndex = viewsToDesc.size();
-        startIndexArray.emplace_back(vIndex, sIndex);
-        samplerToDesc.resize(sIndex + model.sampler.size());
-        viewsToDesc.resize(vIndex + model.imageViews.size());
-        std::copy(model.imageViews.begin(), model.imageViews.end(), viewsToDesc.begin() + vIndex);
-        std::copy(model.sampler.begin(), model.sampler.end(), samplerToDesc.begin() + sIndex);
+        InstanceOffsets offsetsL;
+        offsetsL.textureOffset = expand<vk::ImageView>(viewsToDesc, model.imageViews);
+        offsetsL.materialOffset = expand<Material>(materialData, model.rtxMaterials);
+        offsetsL.geometryOffset = expand<GeometryData>(geometryData, model.rtxGeodata);
+        offsetsL.samplerOffset = expand<vk::Sampler>(samplerToDesc, model.sampler);
+        startIndexArray.push_back(offsetsL);
     }
+
+    context.raytraceExt.instanceBuffer = createBuffer<InstanceOffsets>(context, startIndexArray, vk::BufferUsageFlagBits::eStorageBuffer);
+    context.raytraceExt.geoBuffer = createBuffer<GeometryData>(context, geometryData, vk::BufferUsageFlagBits::eStorageBuffer);
+    context.raytraceExt.materialBuffer = createBuffer<Material>(context, materialData, vk::BufferUsageFlagBits::eStorageBuffer);
+    vk::DescriptorBufferInfo bufferInfoLocal(context.raytraceExt.instanceBuffer.buffer, 0, VK_WHOLE_SIZE);
+    vk::WriteDescriptorSet arrayDescLocal(context.raytraceExt.textureSet, 1, 0, vk::DescriptorType::eStorageBuffer,
+        {}, bufferInfoLocal);
+    context.device.updateDescriptorSets(arrayDescLocal, {});
+    bufferInfo.setBuffer(context.raytraceExt.geoBuffer.buffer);
+    arrayDescLocal.setDstBinding(2);
+    context.device.updateDescriptorSets(arrayDescLocal, {});
+    bufferInfo.setBuffer(context.raytraceExt.materialBuffer.buffer);
+    arrayDescLocal.setDstBinding(3);
+    context.device.updateDescriptorSets(arrayDescLocal, {});
 
     if (!samplerToDesc.empty()) {
         const auto sampler = samplerToDesc[0]; // TODO BETTER WAY

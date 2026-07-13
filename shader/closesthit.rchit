@@ -21,7 +21,7 @@ layout(binding=2, set = 2) readonly buffer MaterialsBlock
   Material[] material;
 } M;
 
-layout(binding=1, set = 2) readonly buffer GeometryDataBlock
+layout(binding=3, set = 2) readonly buffer GeometryDataBlock
 {
   GeometryData[] geometry;
 } G;

@@ -8,6 +8,7 @@
 #include <glm/glm.hpp>
 #include "trackball.hpp"
 #include "rng.hpp"
+#include "Shared.hpp"
 
 namespace fs = std::filesystem;
 
@@ -16,6 +17,11 @@ namespace fs = std::filesystem;
 #define MAX_TILLING 8
 
 #define MAX_IMAGE_TEXTURES_RTX 256
+
+struct DataBuffer {
+	vk::DeviceMemory memory;
+	vk::Buffer buffer;
+};
 
 struct LightList {
 	uint32_t ids[NUMBER_OF_LIGHTS];
@@ -119,6 +125,10 @@ struct RaytracingMainContext {
 	vk::StridedDeviceAddressRegionKHR missRegion;
 	vk::StridedDeviceAddressRegionKHR hitRegion;
 	vk::StridedDeviceAddressRegionKHR callableRegion;
+
+	DataBuffer geoBuffer;
+	DataBuffer materialBuffer;
+	DataBuffer instanceBuffer;
 };
 
 struct MainContext {

@@ -28,6 +28,22 @@ inline vk::DeviceMemory loadToMemory(MainContext& context, std::span<const uint8
 }
 
 template<typename T>
+inline DataBuffer createBuffer(MainContext& context, std::span<T> data, vk::BufferUsageFlags additional = {}) {
+    // Allocate buffer
+    const auto usage = additional | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eUniformBuffer;
+    const auto buffer = context.device.createBuffer(vk::BufferCreateInfo{
+        {},
+        (uint32_t)data.size_bytes(),
+        usage,
+        vk::SharingMode::eExclusive
+        });
+    const auto bufferRequ = context.device.getBufferMemoryRequirements(buffer);
+    const auto memory = loadToMemory(context, { (uint8_t*)data.data(), data.size_bytes() }, bufferRequ);
+    context.device.bindBufferMemory(buffer, memory, 0);
+    return DataBuffer{ memory, buffer };
+}
+
+template<typename T>
 inline ArrayBuffer createArrayBuffer(MainContext& context, std::span<T> data, vk::DescriptorSetLayout layout, vk::BufferUsageFlags additional = {}) {
     // Allocate buffer
     const auto usage = additional | vk::BufferUsageFlagBits::eShaderDeviceAddress | vk::BufferUsageFlagBits::eUniformBuffer;

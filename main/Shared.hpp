@@ -15,7 +15,10 @@ struct GeometryData {
 };
 
 struct InstanceOffsets {
-    uint geometryID;
+    uint geometryOffset;
+    uint materialOffset;
+    uint textureOffset;
+    uint samplerOffset;
 };
 
 #endif
