@@ -29,7 +29,7 @@ void main()
 	float tmin = 0.001;
 	float tmax = 10000.0;
 
-    payload = vec3(0.0);
+    payload = vec3(0.0, 1.0, 0.0);
 
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
     imageStore(image, pixel, vec4(payload, 1.0));
