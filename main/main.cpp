@@ -468,7 +468,8 @@ inline void createRaytracingPipeline(MainContext& context) {
     std::array shaderStagesLoaded = {
         loadShaderStages(context,  "raygen.rgen.spv"),
         loadShaderStages(context,  "miss.rmiss.spv"),
-        loadShaderStages(context, "closesthit.rchit.spv")
+        loadShaderStages(context, "closesthit.rchit.spv"),
+        loadShaderStages(context, "lightHit.rchit.spv")
     };
 
     std::array<vk::DescriptorSetLayoutBinding, 4> bindings{};
@@ -543,12 +544,17 @@ inline void createRaytracingPipeline(MainContext& context) {
     hitGroup.setClosestHitShader(2);
     hitGroup.setGeneralShader(2);
 
-    std::array<vk::RayTracingShaderGroupCreateInfoKHR, 3> groups = { raygenGroup, missGroup, hitGroup };
+    vk::RayTracingShaderGroupCreateInfoKHR hitGroupLight{};
+    hitGroupLight.setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
+    hitGroupLight.setClosestHitShader(3);
+    hitGroupLight.setGeneralShader(3);
+
+    std::array<vk::RayTracingShaderGroupCreateInfoKHR, 4> groups = { raygenGroup, missGroup, hitGroup, hitGroupLight };
 
     vk::RayTracingPipelineCreateInfoKHR pipelineInfo{};
     pipelineInfo.setStages(shaderStagesLoaded);
     pipelineInfo.setGroups(groups);
-    pipelineInfo.setMaxPipelineRayRecursionDepth(1);
+    pipelineInfo.setMaxPipelineRayRecursionDepth(3);
     pipelineInfo.setLayout(context.raytraceExt.mainRayLayout);
 
     auto pipeline = context.device.createRayTracingPipelineKHR({}, {}, pipelineInfo, nullptr, context.dynamicLoader);
@@ -631,7 +637,7 @@ inline void createRaytracingPipeline(MainContext& context) {
     memset(mapped, 0, sbtSize);
     memcpy(static_cast<char*>(mapped), shaderHandles.data(), handleSize);
     memcpy(static_cast<char*>(mapped) + missOffset, shaderHandles.data() + handleSize, handleSize);
-    memcpy(static_cast<char*>(mapped) + hitOffset, shaderHandles.data() + 2 * handleSize, handleSize);
+    memcpy(static_cast<char*>(mapped) + hitOffset, shaderHandles.data() + 2 * handleSize, 2*handleSize);
 
     context.device.unmapMemory(sbtMemory);
 
@@ -646,7 +652,7 @@ inline void createRaytracingPipeline(MainContext& context) {
     context.raytraceExt.missRegion.size = handleStride;
 
     context.raytraceExt.hitRegion.deviceAddress = sbtAddress + hitOffset;
-    context.raytraceExt.hitRegion.stride = handleStride;
+    context.raytraceExt.hitRegion.stride = 2 * handleStride;
     context.raytraceExt.hitRegion.size = handleStride;
 }
 
@@ -1224,7 +1230,7 @@ inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& out
             "assets/cube.glb",
             outmodels[1 + i],
             ModelConfig{ .fillMode = vk::PolygonMode::eLine, .position = light.position, .scale = 0.3f, 
-                         .shaderBindingOffset = 0 } // TODO Change shader binding for RTX
+                         .shaderBindingOffset = 1 } // TODO Change shader binding for RTX
         );
     }
     return loader;
