@@ -36,6 +36,14 @@ layout(binding=5, set = 2) readonly buffer UIDBlock
   uint[] ids;
 } ID;
 
+layout(binding=6, set = 2) uniform lightSources
+{
+  LightSource[NUMBER_OF_LIGHTS] lights;
+  uint numberOfLights;
+
+  //for us useless
+  uint numberOfLightsWithShadowmap;
+} L;
 void main()
 {
     payload.spectrum += payload.contribution * vec3(1.0f, 1.0f, 1.0f);

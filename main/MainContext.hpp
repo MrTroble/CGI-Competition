@@ -12,7 +12,7 @@
 
 namespace fs = std::filesystem;
 
-#define NUMBER_OF_LIGHTS 64
+
 #define NUMBER_OF_BIG_LIGHTS 64
 #define MAX_TILLING 8
 
@@ -81,15 +81,7 @@ struct Settings {
 	RenderTillingInfo baseTillingInfo;
 };
 
-struct LightSource {
-	glm::vec3 position;
-	float padding1;
-	glm::vec3 direction;
-	float padding2;
-	glm::vec3 color;
-	// [0, 1]
-	float brightness;
-};
+
 
 struct ShadowMapContext {
 	std::vector<vk::Image> shadowMaps;
