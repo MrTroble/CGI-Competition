@@ -4,7 +4,9 @@
 
 #include "../main/Shared.hpp"
 
-layout(location = 0) rayPayloadInEXT vec3 payload;
+layout(location = 0) rayPayloadInEXT Payload payload;
+
+layout(set=1, binding=0) uniform accelerationStructureEXT topLevelAS;
 
 // Upper Bound
 layout(binding=0, set=2) uniform sampler2D textures[256];
@@ -41,12 +43,12 @@ void main()
     InstanceOffsets off = I.offsets[gl_InstanceID];
     GeometryData geo = G.geometry[gl_GeometryIndexEXT + off.geometryOffset];
     if(geo.materialID < 0) {
-       payload = vec3(1.0, 0.0, 1.0);
+       payload.spectrum = vec3(1.0, 0.0, 1.0);
        return;
     }
     MaterialData mat = M.material[geo.materialID + off.materialOffset];
     if(mat.texID < 0) {
-        payload = vec3(1.0, 0.0, 0.0);
+        payload.spectrum = vec3(1.0, 0.0, 0.0);
         return;
     }
     const uint index = gl_PrimitiveID * 3 + geo.offsetIndexLocal + off.primitiveOffset;
@@ -54,5 +56,7 @@ void main()
     const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
     const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
     vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
-    payload = color.xyz;
+    payload.contribution = color.xyz;
+
+    //traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
 }

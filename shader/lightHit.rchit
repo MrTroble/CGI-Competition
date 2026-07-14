@@ -4,7 +4,7 @@
 
 #include "../main/Shared.hpp"
 
-layout(location = 0) rayPayloadInEXT vec3 payload;
+layout(location = 0) rayPayloadInEXT Payload payload;
 
 // Upper Bound
 layout(binding=0, set=2) uniform sampler2D textures[256];
@@ -38,24 +38,6 @@ layout(binding=5, set = 2) readonly buffer UIDBlock
 
 void main()
 {
-    payload = vec3(1.0, 0, 1.0);
+    payload.spectrum += payload.contribution * vec3(1.0f, 1.0f, 1.0f);
     return;
-
-    InstanceOffsets off = I.offsets[gl_InstanceID];
-    GeometryData geo = G.geometry[gl_GeometryIndexEXT + off.geometryOffset];
-    if(geo.materialID < 0) {
-       payload = vec3(1.0, 0.0, 1.0);
-       return;
-    }
-    MaterialData mat = M.material[geo.materialID + off.materialOffset];
-    if(mat.texID < 0) {
-        payload = vec3(1.0, 0.0, 0.0);
-        return;
-    }
-    const uint index = gl_PrimitiveID * 3 + geo.offsetIndexLocal + off.primitiveOffset;
-    const uvec3 currentIds = uvec3(ID.ids[index], ID.ids[index + 1], ID.ids[index + 2]) + uvec3(geo.offsetVertexLocal);
-    const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
-    const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
-    vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
-    payload = color.xyz;
 }

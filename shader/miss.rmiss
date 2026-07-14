@@ -1,9 +1,11 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
 
-layout(location = 0) rayPayloadInEXT vec3 payload;
+#include "../main/Shared.hpp"
+
+layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main()
 {
-    payload = vec3(0.2, 0.4, 1.0); // Blau
+    payload.spectrum = vec3(0.2, 0.4, 1.0); // Blau
 }
