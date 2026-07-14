@@ -804,8 +804,8 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
             offsetsL.materialOffset = expand<MaterialData>(materialData, model.rtxMaterials);
             offsetsL.geometryOffset = expand<GeometryData>(geometryData, model.rtxGeodata);
             offsetsL.samplerOffset = expand<vk::Sampler>(samplerToDesc, model.sampler);
-            offsetsL.primitiveOffset = amountMax;
-            offsetsL.indexOffset = amountInstanceMax;
+            offsetsL.primitiveOffset = amountMax / sizeof(glm::vec2);
+            offsetsL.indexOffset = amountInstanceMax / sizeof(uint32_t);
             startIndexArray.push_back(offsetsL);
             for (const auto& copy : model.rtxCopyData) {
                 cmd.copyBuffer(copy.buffer, context.raytraceExt.additionalBuffer[0].buffer, vk::BufferCopy{ copy.offset, amountMax, copy.size});

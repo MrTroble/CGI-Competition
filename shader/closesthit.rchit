@@ -49,8 +49,8 @@ void main()
         payload = vec3(1.0, 0.0, 0.0);
         return;
     }
-    const uint index = ((gl_PrimitiveID + geo.offsetIndexLocal) * 3) + off.primitiveOffset;
-    const uvec3 currentIds = uvec3(ID.ids[index + 1], ID.ids[index + 2], ID.ids[index + 3]) + uvec3(geo.offsetVertexLocal);
+    const uint index = gl_PrimitiveID * 3 + geo.offsetIndexLocal + off.primitiveOffset;
+    const uvec3 currentIds = uvec3(ID.ids[index], ID.ids[index + 1], ID.ids[index + 2]) + uvec3(geo.offsetVertexLocal);
     const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
     const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
     vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
