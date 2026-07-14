@@ -452,7 +452,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     tlasInstance.transform = identMatrix;
     tlasInstance.instanceCustomIndex = 0;
     tlasInstance.mask = 0xFF;
-    tlasInstance.instanceShaderBindingTableRecordOffset = 0;
+    tlasInstance.instanceShaderBindingTableRecordOffset = config.shaderBindingOffset;
     tlasInstance.setFlags(vk::GeometryInstanceFlagBitsKHR::eTriangleFacingCullDisable);
     tlasInstance.accelerationStructureReference = blasAddress;
     extHolder.instanceInfo = tlasInstance;

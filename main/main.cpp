@@ -834,19 +834,19 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     context.raytraceExt.geoBuffer = createBuffer<GeometryData>(context, geometryData, vk::BufferUsageFlagBits::eStorageBuffer);
     context.raytraceExt.materialBuffer = createBuffer<MaterialData>(context, materialData, vk::BufferUsageFlagBits::eStorageBuffer);
     vk::DescriptorBufferInfo bufferInfoLocal(context.raytraceExt.instanceBuffer.buffer, 0, VK_WHOLE_SIZE);
-    vk::WriteDescriptorSet arrayDescLocal(context.raytraceExt.textureSet, 1, 0, vk::DescriptorType::eStorageBuffer,
-        {}, bufferInfoLocal);
+    vk::WriteDescriptorSet arrayDescLocal(context.raytraceExt.textureSet, 1, 0, 1, vk::DescriptorType::eStorageBuffer,
+        nullptr, &bufferInfoLocal);
     context.device.updateDescriptorSets(arrayDescLocal, {});
-    bufferInfo.setBuffer(context.raytraceExt.geoBuffer.buffer);
+    bufferInfoLocal.setBuffer(context.raytraceExt.geoBuffer.buffer);
     arrayDescLocal.setDstBinding(3);
     context.device.updateDescriptorSets(arrayDescLocal, {});
-    bufferInfo.setBuffer(context.raytraceExt.materialBuffer.buffer);
+    bufferInfoLocal.setBuffer(context.raytraceExt.materialBuffer.buffer);
     arrayDescLocal.setDstBinding(2);
     context.device.updateDescriptorSets(arrayDescLocal, {});
-    bufferInfo.setBuffer(context.raytraceExt.additionalBuffer[0].buffer);
+    bufferInfoLocal.setBuffer(context.raytraceExt.additionalBuffer[0].buffer);
     arrayDescLocal.setDstBinding(4);
     context.device.updateDescriptorSets(arrayDescLocal, {});
-    bufferInfo.setBuffer(context.raytraceExt.additionalBuffer[1].buffer);
+    bufferInfoLocal.setBuffer(context.raytraceExt.additionalBuffer[1].buffer);
     arrayDescLocal.setDstBinding(5);
     context.device.updateDescriptorSets(arrayDescLocal, {});
 

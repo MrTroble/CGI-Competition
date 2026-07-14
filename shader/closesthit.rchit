@@ -53,8 +53,6 @@ void main()
     const uvec3 currentIds = uvec3(ID.ids[index + 1], ID.ids[index + 2], ID.ids[index + 3]) + uvec3(geo.offsetVertexLocal);
     const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
     const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
-    payload = vec3(currentIds * 0.001f);
-    return;
     vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
     payload = color.xyz;
 }
