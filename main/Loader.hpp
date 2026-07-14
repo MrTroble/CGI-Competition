@@ -7,6 +7,12 @@
 #include "glm/glm.hpp"
 #include "Shared.hpp"
 
+struct UVCopyInfo {
+	vk::Buffer buffer;
+	size_t offset;
+	size_t size;
+};
+
 struct OutputModel {
 	std::vector<vk::Buffer> buffers;
 	std::vector<vk::DeviceMemory> memorys;
@@ -28,6 +34,10 @@ struct OutputModel {
 
 	std::vector<MaterialData> rtxMaterials;
 	std::vector<GeometryData> rtxGeodata;
+	std::vector<UVCopyInfo> rtxCopyData;
+	std::vector<UVCopyInfo> rtxIndexCopyData;
+	size_t completeAmountToCopy = 0;
+	size_t completeAmountToIndexCopy = 0;
 };
 
 struct ModelConfig {

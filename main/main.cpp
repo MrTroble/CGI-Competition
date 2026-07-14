@@ -487,7 +487,7 @@ inline void createRaytracingPipeline(MainContext& context) {
     bindings[2].descriptorCount = 1;
     bindings[2].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-    std::array<vk::DescriptorSetLayoutBinding, 4> bindingsTextures{};
+    std::array<vk::DescriptorSetLayoutBinding, 6> bindingsTextures{};
     bindingsTextures[0].binding = 0;
     bindingsTextures[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
     bindingsTextures[0].descriptorCount = MAX_IMAGE_TEXTURES_RTX;
@@ -507,6 +507,16 @@ inline void createRaytracingPipeline(MainContext& context) {
     bindingsTextures[3].descriptorType = vk::DescriptorType::eStorageBuffer;
     bindingsTextures[3].descriptorCount = 1;
     bindingsTextures[3].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+
+    bindingsTextures[4].binding = 4;
+    bindingsTextures[4].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindingsTextures[4].descriptorCount = 1;
+    bindingsTextures[4].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+
+    bindingsTextures[5].binding = 5;
+    bindingsTextures[5].descriptorType = vk::DescriptorType::eStorageBuffer;
+    bindingsTextures[5].descriptorCount = 1;
+    bindingsTextures[5].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
     vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, 2, bindings.data() };
     context.raytraceExt.descLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
@@ -562,7 +572,7 @@ inline void createRaytracingPipeline(MainContext& context) {
         MAX_IMAGE_TEXTURES_RTX
     } , vk::DescriptorPoolSize{
         vk::DescriptorType::eStorageBuffer,
-        3
+        5
     } };
 
     vk::DescriptorPoolCreateInfo poolInfo{ {}, MAX_POOL, mainPoolInfos };
@@ -747,7 +757,67 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     vk::CommandBufferAllocateInfo allocateInfo(pool, vk::CommandBufferLevel::ePrimary, 1);
     const auto cmd = context.device.allocateCommandBuffers(allocateInfo).back();
     vk::CommandBufferBeginInfo cmdBeginInfo(vk::CommandBufferUsageFlags{});
+
+    context.raytraceExt.textureSet = context.device.allocateDescriptorSets({ context.raytraceExt.pool,
+        context.raytraceExt.descTextureLayout }).back();
+    std::vector<vk::DescriptorImageInfo> imageInfos;
+
+    std::vector<vk::Sampler> samplerToDesc;
+    std::vector<vk::ImageView> viewsToDesc;
+    std::vector<MaterialData> materialData;
+    std::vector<GeometryData> geometryData;
+
     cmd.begin(cmdBeginInfo);
+
+    std::vector<InstanceOffsets> startIndexArray;
+    size_t amountMax = 0;
+    size_t amountInstanceMax = 0;
+    for (auto& model : outModels)
+    {
+        amountMax += model.completeAmountToCopy;
+        amountInstanceMax += model.completeAmountToIndexCopy;
+    }
+    {
+        std::array amountCurrent = { amountMax,  amountInstanceMax };
+        for (size_t i = 0; i < 2; i++)
+        {
+            const auto usage = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer;
+            const auto buffer = context.device.createBuffer(vk::BufferCreateInfo{
+                {},
+                (uint32_t)amountCurrent[i],
+                usage,
+                vk::SharingMode::eExclusive
+                });
+            const auto bufferRequ = context.device.getBufferMemoryRequirements(buffer);
+            vk::MemoryAllocateInfo memoryAlloc(bufferRequ.size, context.deviceLocalOnly);
+            const auto memory = context.device.allocateMemory(memoryAlloc);
+            context.device.bindBufferMemory(buffer, memory, 0);
+            context.raytraceExt.additionalBuffer[i] = {memory, buffer};
+        }
+
+        amountMax = 0;
+        amountInstanceMax = 0;
+        for (auto& model : outModels)
+        {
+            InstanceOffsets offsetsL;
+            offsetsL.textureOffset = expand<vk::ImageView>(viewsToDesc, model.imageViews);
+            offsetsL.materialOffset = expand<MaterialData>(materialData, model.rtxMaterials);
+            offsetsL.geometryOffset = expand<GeometryData>(geometryData, model.rtxGeodata);
+            offsetsL.samplerOffset = expand<vk::Sampler>(samplerToDesc, model.sampler);
+            offsetsL.primitiveOffset = amountMax;
+            offsetsL.indexOffset = amountInstanceMax;
+            startIndexArray.push_back(offsetsL);
+            for (const auto& copy : model.rtxCopyData) {
+                cmd.copyBuffer(copy.buffer, context.raytraceExt.additionalBuffer[0].buffer, vk::BufferCopy{ copy.offset, amountMax, copy.size});
+                amountMax += copy.size;
+            }
+            for (const auto& copy : model.rtxIndexCopyData)
+            {
+                cmd.copyBuffer(copy.buffer, context.raytraceExt.additionalBuffer[1].buffer, vk::BufferCopy{ copy.offset, amountInstanceMax, copy.size });
+                amountInstanceMax += copy.size;
+            }
+        }
+    }
 
     vk::AccelerationStructureBuildRangeInfoKHR rangeInfo{ (uint32_t)outModels.size() };
     cmd.buildAccelerationStructuresKHR(tlasBuildInfo, &rangeInfo, context.dynamicLoader);
@@ -760,26 +830,6 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 
     context.device.destroy(pool);
 
-    context.raytraceExt.textureSet = context.device.allocateDescriptorSets({ context.raytraceExt.pool,
-        context.raytraceExt.descTextureLayout }).back();
-    std::vector<vk::DescriptorImageInfo> imageInfos;
-
-    std::vector<vk::Sampler> samplerToDesc;
-    std::vector<vk::ImageView> viewsToDesc;
-    std::vector<MaterialData> materialData;
-    std::vector<GeometryData> geometryData;
-
-    std::vector<InstanceOffsets> startIndexArray;
-    for (auto& model : outModels)
-    {
-        InstanceOffsets offsetsL;
-        offsetsL.textureOffset = expand<vk::ImageView>(viewsToDesc, model.imageViews);
-        offsetsL.materialOffset = expand<MaterialData>(materialData, model.rtxMaterials);
-        offsetsL.geometryOffset = expand<GeometryData>(geometryData, model.rtxGeodata);
-        offsetsL.samplerOffset = expand<vk::Sampler>(samplerToDesc, model.sampler);
-        startIndexArray.push_back(offsetsL);
-    }
-
     context.raytraceExt.instanceBuffer = createBuffer<InstanceOffsets>(context, startIndexArray, vk::BufferUsageFlagBits::eStorageBuffer);
     context.raytraceExt.geoBuffer = createBuffer<GeometryData>(context, geometryData, vk::BufferUsageFlagBits::eStorageBuffer);
     context.raytraceExt.materialBuffer = createBuffer<MaterialData>(context, materialData, vk::BufferUsageFlagBits::eStorageBuffer);
@@ -788,10 +838,16 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
         {}, bufferInfoLocal);
     context.device.updateDescriptorSets(arrayDescLocal, {});
     bufferInfo.setBuffer(context.raytraceExt.geoBuffer.buffer);
-    arrayDescLocal.setDstBinding(2);
+    arrayDescLocal.setDstBinding(3);
     context.device.updateDescriptorSets(arrayDescLocal, {});
     bufferInfo.setBuffer(context.raytraceExt.materialBuffer.buffer);
-    arrayDescLocal.setDstBinding(3);
+    arrayDescLocal.setDstBinding(2);
+    context.device.updateDescriptorSets(arrayDescLocal, {});
+    bufferInfo.setBuffer(context.raytraceExt.additionalBuffer[0].buffer);
+    arrayDescLocal.setDstBinding(4);
+    context.device.updateDescriptorSets(arrayDescLocal, {});
+    bufferInfo.setBuffer(context.raytraceExt.additionalBuffer[1].buffer);
+    arrayDescLocal.setDstBinding(5);
     context.device.updateDescriptorSets(arrayDescLocal, {});
 
     if (!samplerToDesc.empty()) {

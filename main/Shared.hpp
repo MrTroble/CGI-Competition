@@ -12,6 +12,8 @@ struct MaterialData {
 
 struct GeometryData {
     int materialID;
+    uint offsetIndexLocal;
+    uint offsetVertexLocal;
 };
 
 struct InstanceOffsets {
@@ -19,6 +21,8 @@ struct InstanceOffsets {
     uint materialOffset;
     uint textureOffset;
     uint samplerOffset;
+    uint primitiveOffset;
+    uint indexOffset;
 };
 
 #endif

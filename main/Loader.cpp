@@ -318,6 +318,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     context.device.bindBufferMemory(bufferTransforms, memoryTrafo, 0);
     const auto modelDataAdd = context.device.getBufferAddress({ bufferTransforms }, context.dynamicLoader);
 
+    out.completeAmountToCopy = 0;
     perNodeId = 0;
     for (auto& node : model.nodes) {
         const vk::DeviceAddress currentModel = modelDataAdd + perNodeId * sizeof(VkTransformMatrixKHR);
@@ -343,7 +344,34 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
                 maxPrimitive.push_back(primitiveSize);
                 vk::AccelerationStructureBuildRangeInfoKHR primitveRanges{ primitiveSize, 0, 0, 0 };
                 structureBuildRange.push_back(primitveRanges);
-                out.rtxGeodata.push_back(GeometryData{primitive.material});
+                out.rtxGeodata.push_back(GeometryData{primitive.material, 
+                    (uint32_t)(out.completeAmountToIndexCopy / sizeof(uint32_t)), (uint32_t)(out.completeAmountToCopy / sizeof(glm::vec2)) });
+                const auto iter = primitive.attributes.find("POSITION");
+                if (iter == std::end(primitive.attributes))
+                    throw std::runtime_error("Could not find attribute!");
+                const auto& vertAccess = model.accessors[iter->second];
+                const auto [uv1Id, uv1Off] = getFromInput(model, primitive, "TEXCOORD_0");
+                UVCopyInfo copyInfo{ out.buffers[uv1Id], uv1Off, vertAccess.count * sizeof(glm::vec2)};
+                out.rtxCopyData.push_back(copyInfo);
+                const auto multi = sizeof(uint32_t);
+                if (indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                    // WELL TO BAD!
+                    const auto& idData = model.buffers[model.bufferViews[indexAccess.bufferView].buffer].data;
+                    std::vector<uint32_t> indexData(indexAccess.count);
+                    for (size_t i = 0; i < indexAccess.count; i++)
+                    {
+                        indexData[i] = ((uint16_t*)idData.data())[i];
+                    }
+                    const auto buffC = createBuffer<uint32_t>(context, indexData, vk::BufferUsageFlagBits::eTransferSrc);
+                    UVCopyInfo copyIndexInfo{ buffC.buffer, 0, indexAccess.count * multi };
+                    out.rtxIndexCopyData.push_back(copyIndexInfo);
+                }
+                else {
+                    UVCopyInfo copyIndexInfo{ out.buffers[indexAccess.bufferView], indexAccess.byteOffset, indexAccess.count * multi };
+                    out.rtxIndexCopyData.push_back(copyIndexInfo);
+                }
+                out.completeAmountToCopy += copyInfo.size;
+                out.completeAmountToIndexCopy += indexAccess.count * multi;
             }
         }
     }

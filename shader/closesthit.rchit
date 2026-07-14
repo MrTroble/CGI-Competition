@@ -26,6 +26,16 @@ layout(binding=3, set = 2) readonly buffer GeometryDataBlock
   GeometryData[] geometry;
 } G;
 
+layout(binding=4, set = 2) readonly buffer UVBlock
+{
+  vec2[] uvs;
+} UV;
+
+layout(binding=5, set = 2) readonly buffer UIDBlock
+{
+  uint[] ids;
+} ID;
+
 void main()
 {
     InstanceOffsets off = I.offsets[gl_InstanceID];
@@ -39,6 +49,12 @@ void main()
         payload = vec3(1.0, 0.0, 0.0);
         return;
     }
-    vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], attribs);
+    const uint index = ((gl_PrimitiveID + geo.offsetIndexLocal) * 3) + off.primitiveOffset;
+    const uvec3 currentIds = uvec3(ID.ids[index + 1], ID.ids[index + 2], ID.ids[index + 3]) + uvec3(geo.offsetVertexLocal);
+    const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
+    const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
+    payload = vec3(currentIds * 0.001f);
+    return;
+    vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
     payload = color.xyz;
 }
