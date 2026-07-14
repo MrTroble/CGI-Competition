@@ -605,7 +605,7 @@ inline void createRaytracingPipeline(MainContext& context) {
 
 
 	//todo remove magic number
-	uint32_t groupCount = 3;
+	uint32_t groupCount = 4;
 	std::vector<uint8_t> shaderHandles(groupCount * handleSize);
 	auto handels = context.device.getRayTracingShaderGroupHandlesKHR(context.raytraceExt.mainRayPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
 
@@ -616,7 +616,7 @@ inline void createRaytracingPipeline(MainContext& context) {
 	uint32_t handleStride = alignUp(handleSize, handleAlignment);
 	uint32_t raygenSize = handleStride;
 	uint32_t missSize = handleStride;
-	uint32_t hitSize = handleStride;
+	uint32_t hitSize = handleStride * 2;
 	uint32_t missOffset = alignUp(raygenSize, baseAlignment);
 	uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
 	uint32_t sbtSize = hitOffset + hitSize;
@@ -657,8 +657,8 @@ inline void createRaytracingPipeline(MainContext& context) {
 	context.raytraceExt.missRegion.size = handleStride;
 
 	context.raytraceExt.hitRegion.deviceAddress = sbtAddress + hitOffset;
-	context.raytraceExt.hitRegion.stride = 2 * handleStride;
-	context.raytraceExt.hitRegion.size = handleStride;
+	context.raytraceExt.hitRegion.stride = handleStride;
+	context.raytraceExt.hitRegion.size = hitSize;
 }
 
 template<class T>
