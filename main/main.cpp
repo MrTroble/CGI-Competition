@@ -1223,7 +1223,8 @@ inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& out
             context,
             "assets/cube.glb",
             outmodels[1 + i],
-            ModelConfig{ .fillMode = vk::PolygonMode::eLine, .position = light.position, .scale = 0.3f }
+            ModelConfig{ .fillMode = vk::PolygonMode::eLine, .position = light.position, .scale = 0.3f, 
+                         .shaderBindingOffset = 0 } // TODO Change shader binding for RTX
         );
     }
     return loader;
