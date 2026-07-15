@@ -8,9 +8,10 @@
 #include "Shared.hpp"
 
 struct UVCopyInfo {
-	vk::Buffer buffer;
+	DataBuffer buffer;
 	size_t offset;
 	size_t size;
+	bool markedForDeletion = false;
 };
 
 struct OutputModel {

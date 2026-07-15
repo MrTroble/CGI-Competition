@@ -844,7 +844,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 			{
 				const auto currentIndex = currentLocalIndex++;
 				for (const auto& copy : spans[currentIndex]) {
-					cmd.copyBuffer(copy.buffer, context.raytraceExt.additionalBuffer[currentIndex].buffer, vk::BufferCopy{ copy.offset, amountMax, copy.size });
+					cmd.copyBuffer(copy.buffer.buffer, context.raytraceExt.additionalBuffer[currentIndex].buffer, vk::BufferCopy{ copy.offset, amountMax, copy.size });
 					amountMax += copy.size;
 				}
 			}
@@ -859,6 +859,19 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 	vk::SubmitInfo submitInfo({}, {}, cmd);
 	context.queue.submit(submitInfo);
 	context.queue.waitIdle();
+	
+	for (auto& model : outModels)
+	{
+		std::array spans = { std::span{model.rtxCopyData}, std::span{model.rtxIndexCopyData}, std::span{model.rtxNormalCopyData} };
+		for (const auto sp : spans) {
+			for (const auto& c : sp) {
+				if (c.markedForDeletion) {
+					context.device.destroy(c.buffer.buffer);
+					context.device.free(c.buffer.memory);
+				}
+			}
+		}
+	}
 
 	context.device.destroy(pool);
 

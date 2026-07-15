@@ -322,6 +322,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 	perNodeId = 0;
 	for (auto& node : model.nodes) {
 		const vk::DeviceAddress currentModel = modelDataAdd + perNodeId * sizeof(VkTransformMatrixKHR);
+		const auto normalMatrix = nodeMatrix[perNodeId].previousViewMatrix;
 		perNodeId++;
 		if (node.mesh >= 0) {
 			auto& mesh = model.meshes[node.mesh];
@@ -351,7 +352,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 					throw std::runtime_error("Could not find attribute!");
 				const auto& vertAccess = model.accessors[iter->second];
 				const auto [uv1Id, uv1Off] = getFromInput(model, primitive, "TEXCOORD_0");
-				UVCopyInfo copyInfo{ out.buffers[uv1Id], uv1Off, vertAccess.count * sizeof(glm::vec2) };
+				UVCopyInfo copyInfo{ {{}, out.buffers[uv1Id]}, uv1Off, vertAccess.count * sizeof(glm::vec2) };
 				out.rtxCopyData.push_back(copyInfo);
 				const auto multi = sizeof(uint32_t);
 				if (indexAccess.componentType == TINYGLTF_COMPONENT_TYPE_UNSIGNED_SHORT) {
@@ -363,20 +364,33 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 						indexData[i] = ((uint16_t*)idData.data())[i];
 					}
 					const auto buffC = createBuffer<uint32_t>(context, indexData, vk::BufferUsageFlagBits::eTransferSrc);
-					UVCopyInfo copyIndexInfo{ buffC.buffer, 0, indexAccess.count * multi };
+					UVCopyInfo copyIndexInfo{ buffC, 0, indexAccess.count * multi, true};
 					out.rtxIndexCopyData.push_back(copyIndexInfo);
 				}
 				else {
-					UVCopyInfo copyIndexInfo{ out.buffers[indexAccess.bufferView], indexAccess.byteOffset, indexAccess.count * multi };
+					UVCopyInfo copyIndexInfo{ { {}, out.buffers[indexAccess.bufferView] }, indexAccess.byteOffset, indexAccess.count * multi };
 					out.rtxIndexCopyData.push_back(copyIndexInfo);
 				}
-				const auto [normalId, normalOff] = getFromInput(model, primitive, "NORMAL");
-				UVCopyInfo copyNormalInfo{ out.buffers[normalId], normalOff, vertAccess.count * sizeof(glm::vec3) };
-				out.rtxNormalCopyData.push_back(copyNormalInfo);
+				{
+					const auto iter = primitive.attributes.find("NORMAL");
+					if (iter == std::end(primitive.attributes))
+						throw std::runtime_error("Could not find attribute!");
+					const auto& normalAccess = model.accessors[iter->second];
+					const auto& normData = model.buffers[model.bufferViews[normalAccess.bufferView].buffer].data;
+					std::vector<glm::vec3> normalData(normalAccess.count);
+					for (size_t i = 0; i < normalAccess.count; i++)
+					{
+						const auto interm = normalMatrix * glm::vec4(((glm::vec3*)normData.data())[i], 0);
+						normalData[i] = glm::normalize(glm::vec3(interm));
+					}
+					const auto buffC = createBuffer<glm::vec3>(context, normalData, vk::BufferUsageFlagBits::eTransferSrc);
+					UVCopyInfo copyNormalInfo{ buffC, 0, normalAccess.count * sizeof(glm::vec3), true };
+					out.rtxNormalCopyData.push_back(copyNormalInfo);
+					out.completeAmountToNormalCopy += copyNormalInfo.size;
+				}
 
 				out.completeAmountToCopy += copyInfo.size;
 				out.completeAmountToIndexCopy += indexAccess.count * multi;
-				out.completeAmountToNormalCopy += copyNormalInfo.size;
 			}
 		}
 	}
