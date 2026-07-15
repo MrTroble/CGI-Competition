@@ -378,15 +378,15 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 					const auto& normalAccess = model.accessors[iter->second];
 					const auto normView = model.bufferViews[normalAccess.bufferView];
 					const auto& normData = model.buffers[normView.buffer].data;
-					std::vector<glm::vec3> normalData(normalAccess.count);
+					std::vector<glm::vec4> normalData(normalAccess.count);
 					for (size_t i = 0; i < normalAccess.count; i++)
 					{
 						const auto m = ((glm::vec3*)(normData.data() + normView.byteOffset + normalAccess.byteOffset))[i];
 						const auto interm = normalize(normalMatrix * glm::vec4(m, 0));
-						normalData[i] = glm::vec3(interm);
+						normalData[i] = interm;
 					}
-					const auto buffC = createBuffer<glm::vec3>(context, normalData, vk::BufferUsageFlagBits::eTransferSrc);
-					UVCopyInfo copyNormalInfo{ buffC, 0, normalAccess.count * sizeof(glm::vec3), true };
+					const auto buffC = createBuffer<glm::vec4>(context, normalData, vk::BufferUsageFlagBits::eTransferSrc);
+					UVCopyInfo copyNormalInfo{ buffC, 0, normalAccess.count * sizeof(glm::vec4), true };
 					out.rtxNormalCopyData.push_back(copyNormalInfo);
 					out.completeAmountToNormalCopy += copyNormalInfo.size;
 				}
