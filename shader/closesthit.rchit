@@ -86,6 +86,16 @@ void main()
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
     payload.contribution = color.xyz * lambert;
     payload.normal = normalCur;
-    payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.01f;
+    payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.001f;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random)));
+
+    shadowPayload.isOccluded = true;
+    uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
+    LightSource lS = L.lights[indexLight];
+    vec3 neeDir = normalize(lS.position - payload.pos);
+    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.01f, neeDir, 10000, 1);
+    if(!shadowPayload.isOccluded) {
+        float pdf = dot(neeDir, normalCur) / length(lS.position - payload.pos);
+        payload.spectrum += lS.color * payload.contribution *  lS.brightness * pdf;
+    }
 }
