@@ -84,7 +84,7 @@ void main()
     const vec3 normalCur = normalize(bary.x * NORM.normal[currentIds.x].xyz + bary.y * NORM.normal[currentIds.y].xyz + bary.z * NORM.normal[currentIds.z].xyz);
 
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
-    payload.contribution = color.xyz * lambert;
+    payload.contribution *= color.xyz * lambert;
     payload.normal = normalCur;
     payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.001f;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random)));
