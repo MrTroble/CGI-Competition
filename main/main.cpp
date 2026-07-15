@@ -469,7 +469,9 @@ inline void createRaytracingPipeline(MainContext& context) {
 		loadShaderStages(context,  "raygen.rgen.spv"),
 		loadShaderStages(context,  "miss.rmiss.spv"),
 		loadShaderStages(context, "closesthit.rchit.spv"),
-		loadShaderStages(context, "lightHit.rchit.spv")
+		loadShaderStages(context, "lightHit.rchit.spv"),
+		loadShaderStages(context, "shadow.rchit.spv"),
+		loadShaderStages(context, "shadowLight.rchit.spv")
 	};
 
 	std::array<vk::DescriptorSetLayoutBinding, 4> bindings{};
@@ -554,7 +556,15 @@ inline void createRaytracingPipeline(MainContext& context) {
 	hitGroupLight.setClosestHitShader(3);
 	hitGroupLight.setGeneralShader(3);
 
-	std::array<vk::RayTracingShaderGroupCreateInfoKHR, 4> groups = { raygenGroup, missGroup, hitGroup, hitGroupLight };
+	vk::RayTracingShaderGroupCreateInfoKHR hitGroupShadow{};
+	hitGroupShadow.setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
+	hitGroupShadow.setClosestHitShader(4);
+
+	vk::RayTracingShaderGroupCreateInfoKHR hitGroupShadowLight{};
+	hitGroupShadowLight.setType(vk::RayTracingShaderGroupTypeKHR::eTrianglesHitGroup);
+	hitGroupShadowLight.setClosestHitShader(5);
+
+	std::array<vk::RayTracingShaderGroupCreateInfoKHR, 6> groups = { raygenGroup, missGroup, hitGroup, hitGroupLight, hitGroupShadow,hitGroupShadowLight };
 
 	vk::RayTracingPipelineCreateInfoKHR pipelineInfo{};
 	pipelineInfo.setStages(shaderStagesLoaded);
@@ -605,7 +615,7 @@ inline void createRaytracingPipeline(MainContext& context) {
 
 
 	//todo remove magic number
-	uint32_t groupCount = 4;
+	uint32_t groupCount = 6;
 	std::vector<uint8_t> shaderHandles(groupCount * handleSize);
 	auto handels = context.device.getRayTracingShaderGroupHandlesKHR(context.raytraceExt.mainRayPipeline, 0, groupCount, shaderHandles.size(), shaderHandles.data(), context.dynamicLoader);
 
@@ -613,10 +623,11 @@ inline void createRaytracingPipeline(MainContext& context) {
 	uint32_t handleAlignment = rayTracingProperties.shaderGroupHandleAlignment;
 	uint32_t baseAlignment = rayTracingProperties.shaderGroupBaseAlignment;
 
+	uint32_t hitGroupCount = 4;
 	uint32_t handleStride = alignUp(handleSize, handleAlignment);
 	uint32_t raygenSize = handleStride;
 	uint32_t missSize = handleStride;
-	uint32_t hitSize = handleStride * 2;
+	uint32_t hitSize = handleStride * hitGroupCount;
 	uint32_t missOffset = alignUp(raygenSize, baseAlignment);
 	uint32_t hitOffset = alignUp(missOffset + missSize, baseAlignment);
 	uint32_t sbtSize = hitOffset + hitSize;
@@ -642,8 +653,14 @@ inline void createRaytracingPipeline(MainContext& context) {
 	memset(mapped, 0, sbtSize);
 	memcpy(static_cast<char*>(mapped), shaderHandles.data(), handleSize);
 	memcpy(static_cast<char*>(mapped) + missOffset, shaderHandles.data() + handleSize, handleSize);
-	memcpy(static_cast<char*>(mapped) + hitOffset, shaderHandles.data() + 2 * handleSize, 2 * handleSize);
-
+	for (uint32_t i = 0; i < hitGroupCount; i++)
+	{
+		memcpy(
+			static_cast<char*>(mapped) + hitOffset + i * handleStride,
+			shaderHandles.data() + (2 + i) * handleSize,
+			handleSize
+		);
+	}
 	context.device.unmapMemory(sbtMemory);
 
 	vk::DeviceAddress sbtAddress = context.device.getBufferAddress(vk::BufferDeviceAddressInfo{ sbtBuffer }, context.dynamicLoader);
