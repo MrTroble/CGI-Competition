@@ -2,6 +2,7 @@
 #define INT_SHARED_IM
 
 #define NUMBER_OF_LIGHTS 64
+#define SHADOW_RAY_OFFSET 2
 #ifndef INT_GLSL
 #include <glm/glm.hpp>
 
@@ -89,6 +90,10 @@ struct Payload
 	vec3 contribution;
 	vec3 spectrum;
 	uint depth;
+};
+struct ShadowPayload
+{
+	bool isOccluded;
 };
 
 struct LightSource {
