@@ -56,22 +56,47 @@ layout(binding=7, set = 2) readonly buffer NormalBlock
 
 #define M_PI 3.1415926535897932384626433832795
 
+vec3 from(vec2 angles) {
+    return vec3(cos(angles.x) * cos(angles.y), sin(angles.x) * cos(angles.y), sin(angles.y));
+}
+
 vec3 getDirection(vec2 rand) {
     float e1 = 2 * M_PI * rand.x;
     float e2 = acos(1 - rand.y);
+    return from(vec2(e1, e2));
+}
 
-    return vec3(cos(e1) * cos(e2), sin(e1) * cos(e2), sin(e2));
+float GeoTerm(float alpha, vec3 o, vec3 v, vec3 n) {
+    float nDotV = dot(v, n);
+    float nDotO = dot(o, n);
+    float alphaSqrd = alpha * alpha;
+    float G1 = nDotO + sqrt((1.0 - alphaSqrd) * nDotV * nDotV + alphaSqrd);
+    float G2 = nDotV + sqrt((1.0 - alphaSqrd) * nDotO * nDotO + alphaSqrd);
+    if(G1 * G2 <= 0.0f) return 0.0f;
+    return 1.0f / (G1 * G2);
+}
+
+// GLTF Specs
+float conductor_fresnel(float f0, float bsdf, float VdotH) {
+  return bsdf * (f0 + (1 - f0) * pow(1 - abs(VdotH), 5));
+}
+
+vec3 fresnel_mix(float ior, vec3 base, vec3 layer, float VdotH) {
+  float f0 = ((1-ior)/(1+ior));
+  f0 *= f0;
+  float fr = f0 + (1 - f0)* pow(1 - abs(VdotH), 5);
+  return mix(base, layer, fr);
 }
 
 void main()
 {
-    InstanceOffsets off = I.offsets[gl_InstanceID];
-    GeometryData geo = G.geometry[gl_GeometryIndexEXT + off.geometryOffset];
+    const InstanceOffsets off = I.offsets[gl_InstanceID];
+    const GeometryData geo = G.geometry[gl_GeometryIndexEXT + off.geometryOffset];
     if(geo.materialID < 0) {
        payload.contribution = vec3(1.0, 0.0, 1.0);
        return;
     }
-    MaterialData mat = M.material[geo.materialID + off.materialOffset];
+    const MaterialData mat = M.material[geo.materialID + off.materialOffset];
     if(mat.texID < 0) {
         payload.contribution = vec3(1.0, 0.0, 0.0);
         return;
@@ -84,11 +109,36 @@ void main()
     const vec3 normalCur = normalize(bary.x * NORM.normal[currentIds.x].xyz + bary.y * NORM.normal[currentIds.y].xyz + bary.z * NORM.normal[currentIds.z].xyz);
 
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
-    payload.contribution *= color.xyz ;
     payload.normal = normalCur;
     vec3 cleanPos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
     payload.pos = cleanPos + normalCur * 0.001f;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random)));
+    float pdf = 2 * M_PI;
+
+    float alpha = mat.roughness*mat.roughness;
+    vec3 h = normalize(-gl_WorldRayDirectionEXT + payload.dir);
+
+    if(rngRndFloat(payload.random) < 0.0) { // TODO RENABLE
+        vec2 rand = rngRndVec2(payload.random);
+        payload.dir = from(vec2(2 * M_PI * rand.x, atan(alpha * sqrt(rand.y) / sqrt(1 - rand.y))));
+        pdf = 1.0f / (GeoTerm(alpha, payload.dir, -gl_WorldRayDirectionEXT, normalCur) * abs(dot(normalCur, h)));
+    }
+
+    //GGX D
+    float vDotH = dot(-gl_WorldRayDirectionEXT, h);
+    float nDotH = dot(normalCur, h);
+    float tanThe = tan(acos(nDotH));
+    float alphaRoughnessSq = alpha * alpha;
+    float f = nDotH * nDotH * (alphaRoughnessSq - 1.0) + 1.0;
+    float ggxD = float(alpha * alpha) / float(M_PI * f * f);
+    if(f <= 0.0f) ggxD = 0.0f;
+
+    //GGX G
+    float ggxG = GeoTerm(alpha, payload.dir, -gl_WorldRayDirectionEXT, normalCur);
+    vec3 dialectric = fresnel_mix(1.5f, (color.xyz / M_PI), vec3(ggxG * ggxD), vDotH); // Sample after D 
+
+    payload.contribution *= dialectric;
+    payload.contribution *= pdf;
 
 	//vec3 tangentPre = (dYuv.t * dFdx(positionIn) - dXuv.t * dFdy(positionIn)) /
     //   (dXuv.s * dYuv.t - dYuv.s * dXuv.t);
@@ -96,45 +146,16 @@ void main()
 	//vec3 bitangent = normalize(cross(tangent, normalCur));
 	//vec3 normaleVTex = mat3(tangent, bitangent, normalCur) * texture(normalTex, uv1In).rgb;
 
-    shadowPayload.isOccluded = true;
+    // NEE
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
     LightSource lS = L.lights[indexLight];
 
-
-    //GGX D
-    float alpha = mat.roughness * mat.roughness;
-    vec3 h = normalize(-gl_WorldRayDirectionEXT + (payload.pos - lS.position ));
-    float nDotH = max(0.0, dot(h, normalCur));
-    float denom = nDotH * nDotH * (alpha * alpha - 1.0) + 1.0;
-    float ggxD = (alpha * alpha) / (M_PI * denom * denom);
-    //float ggxD = float(alpha * alpha * normalCur) / float(M_PI * pow(cos(thetaM), 4) * pow(mat.roughness * mat.roughness + pow(tan(thetaM) , 2),2));
-  
-    //GGX G
-    float thetaV = acos(dot(-gl_WorldRayDirectionEXT, payload.dir));
-    float tanThetaV = tan(thetaV);
-    float ggxG = 2.0 / (1.0 + sqrt(1.0 + alpha * alpha * pow(tanThetaV, 2)));
-
-    vec3 f0 = mix(vec3(0.04), vec3(color), mat.metallic); 
-    float vDotH = max(0.0, dot(-gl_WorldRayDirectionEXT, h));
-    vec3 ggxF = f0 + (1.0 - f0) * pow(1.0 - vDotH, 5.0);
-
-
-
-    float nDotV = max(0.0, dot(normalCur, -gl_WorldRayDirectionEXT));
-    float nDotL = max(0.0, dot(normalCur, (payload.pos - lS.position )));
-    vec3 specularTerm = (ggxD * ggxF * ggxG) / max(4.0 * nDotV * nDotL, 0.001);
-
-    vec3 kD = (1.0 - ggxF) * (1.0 - mat.metallic);
-    vec3 diffuseTerm = kD * color.xyz / M_PI; 
-
-    vec3 bRDF = diffuseTerm + specularTerm;
-    payload.spectrum *= bRDF;
-
+    shadowPayload.isOccluded = true;
     vec3 neeDir = normalize(lS.position - payload.pos);
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.01f, neeDir, 10000, 1);
     if(!shadowPayload.isOccluded) {
         float pdf = dot(neeDir, normalCur) / length(lS.position - payload.pos);
-        payload.spectrum += lS.color * payload.contribution *  lS.brightness * nDotL;
+        payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf;
     }
 
 }
