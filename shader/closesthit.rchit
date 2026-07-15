@@ -6,6 +6,8 @@
 
 layout(location = 0) rayPayloadInEXT Payload payload;
 
+layout(location = 1) rayPayloadEXT ShadowPayload shadowPayload;
+
 layout(set=1, binding=0) uniform accelerationStructureEXT topLevelAS;
 
 // Upper Bound

@@ -91,6 +91,10 @@ struct Payload
 	vec3 spectrum;
 	uint depth;
 };
+struct ShadowPayload
+{
+	bool isOccluded;
+};
 
 struct LightSource {
 	vec3 position;

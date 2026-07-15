@@ -6,6 +6,8 @@
 
 layout(location = 0) rayPayloadInEXT Payload payload;
 
+layout(location = 1) rayPayloadEXT ShadowPayload shadowPayload;
+
 // Upper Bound
 layout(binding=0, set=2) uniform sampler2D textures[256];
 
