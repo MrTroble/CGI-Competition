@@ -66,7 +66,9 @@ vec3 getDirection(vec2 rand) {
     return from(vec2(e1, e2));
 }
 
-float GeoTerm(float alpha, vec3 o, vec3 v, vec3 n) {
+float GeoTerm(float alpha, vec3 o, vec3 v, vec3 n, vec3 h) {
+    if(dot(v, h) <= 0.0f) return 0.0f; 
+    if(dot(o, h) <= 0.0f) return 0.0f; 
     float nDotV = dot(v, n);
     float nDotO = dot(o, n);
     float alphaSqrd = alpha * alpha;
@@ -121,7 +123,7 @@ void main()
     if(rngRndFloat(payload.random) < 0.0) { // TODO RENABLE
         vec2 rand = rngRndVec2(payload.random);
         payload.dir = from(vec2(2 * M_PI * rand.x, atan(alpha * sqrt(rand.y) / sqrt(1 - rand.y))));
-        pdf = 1.0f / (GeoTerm(alpha, payload.dir, -gl_WorldRayDirectionEXT, normalCur) * abs(dot(normalCur, h)));
+        pdf = 1.0f / (GeoTerm(alpha, payload.dir, -gl_WorldRayDirectionEXT, normalCur, h) * abs(dot(normalCur, h)));
     }
 
     //GGX D
@@ -131,10 +133,10 @@ void main()
     float alphaRoughnessSq = alpha * alpha;
     float f = nDotH * nDotH * (alphaRoughnessSq - 1.0) + 1.0;
     float ggxD = float(alpha * alpha) / float(M_PI * f * f);
-    if(f <= 0.0f) ggxD = 0.0f;
+    if(f <= 0.0f || nDotH <= 0.0f) ggxD = 0.0f;
 
     //GGX G
-    float ggxG = GeoTerm(alpha, payload.dir, -gl_WorldRayDirectionEXT, normalCur);
+    float ggxG = GeoTerm(alpha, payload.dir, -gl_WorldRayDirectionEXT, normalCur, h);
     vec3 dialectric = fresnel_mix(1.5f, (color.xyz / M_PI), vec3(ggxG * ggxD), vDotH); // Sample after D 
 
     payload.contribution *= dialectric;
