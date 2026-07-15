@@ -38,9 +38,12 @@ struct OutputModel {
 	std::vector<UVCopyInfo> rtxCopyData;
 	std::vector<UVCopyInfo> rtxIndexCopyData;
 	std::vector<UVCopyInfo> rtxNormalCopyData;
+	std::vector<UVCopyInfo> rtxVertexCopyData;
+
 	size_t completeAmountToCopy = 0;
 	size_t completeAmountToIndexCopy = 0;
 	size_t completeAmountToNormalCopy = 0;
+	size_t completeAmountToVertexCopy = 0;
 };
 
 struct ModelConfig {

@@ -376,21 +376,23 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 					if (iter == std::end(primitive.attributes))
 						throw std::runtime_error("Could not find attribute!");
 					const auto& normalAccess = model.accessors[iter->second];
-					const auto normView = model.bufferViews[normalAccess.bufferView];
-					const auto& normData = model.buffers[normView.buffer].data;
-					std::vector<glm::vec4> normalData(normalAccess.count);
-					for (size_t i = 0; i < normalAccess.count; i++)
-					{
-						const auto m = ((glm::vec3*)(normData.data() + normView.byteOffset + normalAccess.byteOffset))[i];
-						const auto interm = normalize(normalMatrix * glm::vec4(m, 0));
-						normalData[i] = interm;
+					for (auto& accesor : { normalAccess }) {
+						const auto normView = model.bufferViews[normalAccess.bufferView];
+						const auto& normData = model.buffers[normView.buffer].data;
+						std::vector<glm::vec4> normalData(normalAccess.count);
+						for (size_t i = 0; i < normalAccess.count; i++)
+						{
+							const auto m = ((glm::vec3*)(normData.data() + normView.byteOffset + normalAccess.byteOffset))[i];
+							const auto interm = normalize(normalMatrix * glm::vec4(m, 0));
+							normalData[i] = interm;
+						}
+						const auto buffC = createBuffer<glm::vec4>(context, normalData, vk::BufferUsageFlagBits::eTransferSrc);
+						UVCopyInfo copyNormalInfo{ buffC, 0, normalAccess.count * sizeof(glm::vec4), true };
+						out.rtxNormalCopyData.push_back(copyNormalInfo);
+						out.completeAmountToNormalCopy += copyNormalInfo.size;
 					}
-					const auto buffC = createBuffer<glm::vec4>(context, normalData, vk::BufferUsageFlagBits::eTransferSrc);
-					UVCopyInfo copyNormalInfo{ buffC, 0, normalAccess.count * sizeof(glm::vec4), true };
-					out.rtxNormalCopyData.push_back(copyNormalInfo);
-					out.completeAmountToNormalCopy += copyNormalInfo.size;
 				}
-
+				//out.rtxVertexCopyData(UVCopyInfo{ { {}, out.buffers[posId]}, posOff, vertAccess});
 				out.completeAmountToCopy += copyInfo.size;
 				out.completeAmountToIndexCopy += indexAccess.count * multi;
 			}

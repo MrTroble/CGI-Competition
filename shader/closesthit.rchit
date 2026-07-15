@@ -86,10 +86,15 @@ void main()
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
     payload.contribution *= color.xyz ;
     payload.normal = normalCur;
-    payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.001f;
+    vec3 cleanPos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
+    payload.pos = cleanPos + normalCur * 0.001f;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random)));
 
-
+	//vec3 tangentPre = (dYuv.t * dFdx(positionIn) - dXuv.t * dFdy(positionIn)) /
+    //   (dXuv.s * dYuv.t - dYuv.s * dXuv.t);
+	//vec3 tangent = normalize(tangentPre - normN * dot(normN, tangentPre));
+	//vec3 bitangent = normalize(cross(tangent, normalCur));
+	//vec3 normaleVTex = mat3(tangent, bitangent, normalCur) * texture(normalTex, uv1In).rgb;
 
     shadowPayload.isOccluded = true;
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
