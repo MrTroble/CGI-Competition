@@ -84,18 +84,52 @@ void main()
     const vec3 normalCur = normalize(bary.x * NORM.normal[currentIds.x].xyz + bary.y * NORM.normal[currentIds.y].xyz + bary.z * NORM.normal[currentIds.z].xyz);
 
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
-    payload.contribution *= color.xyz * lambert;
+    payload.contribution *= color.xyz ;
     payload.normal = normalCur;
     payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.001f;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random)));
 
+
+
     shadowPayload.isOccluded = true;
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
     LightSource lS = L.lights[indexLight];
+
+
+    //GGX D
+    float alpha = mat.roughness * mat.roughness;
+    vec3 h = normalize(-gl_WorldRayDirectionEXT + (payload.pos - lS.position ));
+    float nDotH = max(0.0, dot(h, normalCur));
+    float denom = nDotH * nDotH * (alpha * alpha - 1.0) + 1.0;
+    float ggxD = (alpha * alpha) / (M_PI * denom * denom);
+    //float ggxD = float(alpha * alpha * normalCur) / float(M_PI * pow(cos(thetaM), 4) * pow(mat.roughness * mat.roughness + pow(tan(thetaM) , 2),2));
+  
+    //GGX G
+    float thetaV = acos(dot(-gl_WorldRayDirectionEXT, payload.dir));
+    float tanThetaV = tan(thetaV);
+    float ggxG = 2.0 / (1.0 + sqrt(1.0 + alpha * alpha * pow(tanThetaV, 2)));
+
+    vec3 f0 = mix(vec3(0.04), vec3(color), mat.metallic); 
+    float vDotH = max(0.0, dot(-gl_WorldRayDirectionEXT, h));
+    vec3 ggxF = f0 + (1.0 - f0) * pow(1.0 - vDotH, 5.0);
+
+
+
+    float nDotV = max(0.0, dot(normalCur, -gl_WorldRayDirectionEXT));
+    float nDotL = max(0.0, dot(normalCur, (payload.pos - lS.position )));
+    vec3 specularTerm = (ggxD * ggxF * ggxG) / max(4.0 * nDotV * nDotL, 0.001);
+
+    vec3 kD = (1.0 - ggxF) * (1.0 - mat.metallic);
+    vec3 diffuseTerm = kD * color.xyz / M_PI; 
+
+    vec3 bRDF = diffuseTerm + specularTerm;
+    payload.spectrum *= bRDF;
+
     vec3 neeDir = normalize(lS.position - payload.pos);
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.01f, neeDir, 10000, 1);
     if(!shadowPayload.isOccluded) {
         float pdf = dot(neeDir, normalCur) / length(lS.position - payload.pos);
-        payload.spectrum += lS.color * payload.contribution *  lS.brightness * pdf;
+        payload.spectrum += lS.color * payload.contribution *  lS.brightness * nDotL;
     }
+
 }
