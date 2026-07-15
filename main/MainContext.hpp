@@ -45,6 +45,7 @@ struct CameraData {
 	glm::mat4 invView;
 	glm::mat4 invProj;
 	glm::vec4 windowParameter;
+	uint32_t frame_Index;
 	std::uint8_t padding[176];
 	// TODO: add more things here
 };
@@ -76,7 +77,8 @@ struct Settings {
 	bool useTAA = false;
 	bool useAO = false;
 	bool useShadowMaps = false;
-	bool useRayTracing = false;
+	bool useRayTracing = false;	
+	bool accumulate = false;
 
 	RenderTillingInfo baseTillingInfo;
 };

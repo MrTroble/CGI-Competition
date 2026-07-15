@@ -11,9 +11,10 @@ layout(set=1, binding=1) uniform CAMERA {
     mat4 viewInverse;
     mat4 projInverse;
     vec4 windowInfo;
+    uint frameCount;
 } camera;
 
-layout(set=0,binding=0) writeonly uniform image2D image;
+layout(set=0,binding=0, rgba8) uniform image2D image;
 
 layout(location = 0) rayPayloadEXT Payload payload;
 
@@ -38,12 +39,17 @@ void main()
     payload.normal = vec3(0.0);
     payload.spectrum = vec3(0.0);
     payload.contribution = vec3(1.0f);
-    rngInit(payload.random, uint(pixel.x), uint(pixel.y), 0, 11700);
+    rngInit(payload.random, uint(pixel.x), uint(pixel.y), camera.frameCount, 11700);
     
     for(uint i = 0; i < 3; i++) {
         traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
         origin = vec4(payload.pos, 1);
         direction = vec4(payload.dir, 1);
     }
-    imageStore(image, pixel, vec4(payload.spectrum, 1.0));
+    float translation = float(camera.frameCount - 1) / float(camera.frameCount);
+    if(camera.frameCount <= 1) translation = 0;
+    vec4 current = imageLoad(image, pixel) * translation;
+    // Component change for copy accumulate
+    vec3 colorC = vec3(payload.spectrum.z, payload.spectrum.y, payload.spectrum.x) / float(camera.frameCount);
+    imageStore(image, pixel, vec4(current.xyz + colorC, 1.0));
 }

@@ -44,9 +44,9 @@ inline void notifyViewMatrixChanged(MainContext& context, bool applyJitter = tru
 
 	context.cameraNodeData.invView = glm::inverse(jitteredViewMatrix);
 	context.cameraNodeData.invProj = glm::inverse(perspective);
+	context.cameraNodeData.frame_Index = 0;
 
 	context.cameraNodeData.inverseVP = glm::inverse(context.cameraNodeData.mvp);
-	updateMemory(context, context.cameraNode.memory, std::span{ (uint8_t*)&context.cameraNodeData, sizeof(context.cameraNodeData) });
 }
 
 inline void createSwapchain(MainContext& context) {
@@ -121,6 +121,7 @@ inline void createSwapchain(MainContext& context) {
 	{   // Resolve attachments
 		albedoCreateInfo.usage |= vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eStorage
 			| vk::ImageUsageFlagBits::eTransferSrc;
+		albedoCreateInfo.setFormat(vk::Format::eR8G8B8A8Unorm);
 		context.resolve1Image = context.device.createImage(albedoCreateInfo);
 		context.resolve2Image = context.device.createImage(albedoCreateInfo);
 		const auto resolve1ImgRequ = context.device.getImageMemoryRequirements(context.resolve1Image);
@@ -129,8 +130,8 @@ inline void createSwapchain(MainContext& context) {
 		const auto resolve2ImgMemory = context.device.allocateMemory(memoryAlloc);
 		context.device.bindImageMemory(context.resolve1Image, resolve1ImgMemory, 0);
 		context.device.bindImageMemory(context.resolve2Image, resolve2ImgMemory, 0);
-		const auto resolve1ImageView = context.device.createImageView(vk::ImageViewCreateInfo({}, context.resolve1Image, vk::ImageViewType::e2D, vk::Format::eB8G8R8A8Unorm, {}, range));
-		const auto resolve2ImageView = context.device.createImageView(vk::ImageViewCreateInfo({}, context.resolve2Image, vk::ImageViewType::e2D, vk::Format::eB8G8R8A8Unorm, {}, range));
+		const auto resolve1ImageView = context.device.createImageView(vk::ImageViewCreateInfo({}, context.resolve1Image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Unorm, {}, range));
+		const auto resolve2ImageView = context.device.createImageView(vk::ImageViewCreateInfo({}, context.resolve2Image, vk::ImageViewType::e2D, vk::Format::eR8G8B8A8Unorm, {}, range));
 		context.resolveView = resolve1ImageView;
 		context.resolveView2 = resolve2ImageView;
 	}
@@ -184,7 +185,7 @@ inline void createRenderPass(MainContext& context) {
 	const std::array attachments = {
 		// Resolve
 		AttachmentDescription(
-			{}, vk::Format::eB8G8R8A8Unorm, SampleCountFlagBits::e1, AttachmentLoadOp::eClear,
+			{}, vk::Format::eR8G8B8A8Unorm, SampleCountFlagBits::e1, AttachmentLoadOp::eClear,
 			AttachmentStoreOp::eStore, AttachmentLoadOp::eDontCare,
 			AttachmentStoreOp::eDontCare, ImageLayout::eUndefined,
 			ImageLayout::eGeneral),
@@ -205,7 +206,7 @@ inline void createRenderPass(MainContext& context) {
 				ImageLayout::eUndefined, ImageLayout::eGeneral),
 			// Previous out attachment
 			AttachmentDescription(
-				{}, vk::Format::eB8G8R8A8Unorm, SampleCountFlagBits::e1, AttachmentLoadOp::eLoad,
+				{}, vk::Format::eR8G8B8A8Unorm, SampleCountFlagBits::e1, AttachmentLoadOp::eLoad,
 				AttachmentStoreOp::eStore, AttachmentLoadOp::eDontCare,
 				AttachmentStoreOp::eDontCare, ImageLayout::eGeneral,
 				ImageLayout::eGeneral),
@@ -373,7 +374,7 @@ void updateRayImageSet(MainContext& context) {
 		vk::WriteDescriptorSet writeAS{};
 		writeAS.dstBinding = 0;
 		writeAS.descriptorType = vk::DescriptorType::eStorageImage;
-		vk::DescriptorImageInfo imageInfo{ {}, zahl == 0 ? context.resolveView2 : context.resolveView, vk::ImageLayout::eGeneral };
+		vk::DescriptorImageInfo imageInfo{ {}, context.resolveView, vk::ImageLayout::eGeneral };
 		writeAS.setDstSet(imageSet);
 		writeAS.setImageInfo(imageInfo);
 		context.device.updateDescriptorSets(writeAS, {});
@@ -1020,7 +1021,7 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
 		}
 	}
 	else {
-		const auto targetImage = imageID % 2 == 0 ? context.resolve2Image : context.resolve1Image;
+		const auto targetImage = context.resolve1Image;
 		cmd.bindPipeline(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayPipeline);
 		cmd.bindDescriptorSets(vk::PipelineBindPoint::eRayTracingKHR, context.raytraceExt.mainRayLayout, 0,
 			{ context.raytraceExt.imageSet[imageID % 2], context.raytraceExt.topLevelDescSet, context.raytraceExt.textureSet }, {});
@@ -1051,6 +1052,7 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
 	ImGui::Checkbox("Use TAA", &s.useTAA);
 	ImGui::Checkbox("Show AO", &s.useAO);
 	ImGui::Checkbox("Use ray tracing", &s.useRayTracing);
+	ImGui::Checkbox("Accumulate", &s.accumulate);
 	context.cameraNodeData.windowParameter.z = s.useAO ? 1.0f : 0.0f;
 
 	ImGui::SliderInt3("Tiling", (int*)&s.baseTillingInfo.xAmount, 1, MAX_TILLING);
@@ -1318,8 +1320,6 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 	else {
 		return;
 	}
-
-	notifyViewMatrixChanged(*context);
 }
 
 static void mouse_cursor_callback(GLFWwindow* window, double xpos, double ypos)
@@ -1328,9 +1328,9 @@ static void mouse_cursor_callback(GLFWwindow* window, double xpos, double ypos)
 
 	auto context = (MainContext*)glfwGetWindowUserPointer(window);
 	bool viewMatrixChanged = trackball_drag_update(*context);
-
-	if (viewMatrixChanged)
+	if (viewMatrixChanged) {
 		notifyViewMatrixChanged(*context);
+	}
 }
 
 static void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
@@ -1347,6 +1347,7 @@ static void mouse_button_callback(GLFWwindow* window, int button, int action, in
 	}
 	else {
 		trackball_drag_end(*context);
+		notifyViewMatrixChanged(*context);
 	}
 }
 
@@ -1566,9 +1567,10 @@ int main()
 	while (!glfwWindowShouldClose(context.window)) {
 		glfwPollEvents();
 
-		trackball_move_camera(context);
-		notifyViewMatrixChanged(context);
-
+		if(trackball_move_camera(context)) notifyViewMatrixChanged(context);
+		if (context.settings.accumulate) context.cameraNodeData.frame_Index++;
+		else context.cameraNodeData.frame_Index = 1;
+		updateMemory(context, context.cameraNode.memory, std::span{ (uint8_t*)&context.cameraNodeData, sizeof(context.cameraNodeData) });
 
 		if (context.settings.showLights) {
 			renderFrame(context, std::span{ models.begin(), models.size() });
