@@ -47,6 +47,11 @@ layout(binding=6, set = 2) uniform lightSources
   uint numberOfLightsWithShadowmap;
 } L;
 
+layout(binding=7, set = 2) readonly buffer NormalBlock
+{
+  vec3[] normal;
+} NORM;
+
 void main()
 {
     InstanceOffsets off = I.offsets[gl_InstanceID];

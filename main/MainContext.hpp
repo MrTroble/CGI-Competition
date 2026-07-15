@@ -121,7 +121,7 @@ struct RaytracingMainContext {
 	DataBuffer geoBuffer;
 	DataBuffer materialBuffer;
 	DataBuffer instanceBuffer;
-	DataBuffer additionalBuffer[2];
+	std::array<DataBuffer, 3> additionalBuffer;
 };
 
 struct MainContext {

@@ -36,8 +36,10 @@ struct OutputModel {
 	std::vector<GeometryData> rtxGeodata;
 	std::vector<UVCopyInfo> rtxCopyData;
 	std::vector<UVCopyInfo> rtxIndexCopyData;
+	std::vector<UVCopyInfo> rtxNormalCopyData;
 	size_t completeAmountToCopy = 0;
 	size_t completeAmountToIndexCopy = 0;
+	size_t completeAmountToNormalCopy = 0;
 };
 
 struct ModelConfig {
