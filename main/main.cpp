@@ -478,12 +478,12 @@ inline void createRaytracingPipeline(MainContext& context) {
 	bindings[0].binding = 0;
 	bindings[0].descriptorType = vk::DescriptorType::eAccelerationStructureKHR;
 	bindings[0].descriptorCount = 1;
-	bindings[0].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
+	bindings[0].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
 	bindings[1].binding = 1;
 	bindings[1].descriptorType = vk::DescriptorType::eUniformBuffer;
 	bindings[1].descriptorCount = 1;
-	bindings[1].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
+	bindings[1].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
 	bindings[2].binding = 0;
 	bindings[2].descriptorType = vk::DescriptorType::eStorageImage;

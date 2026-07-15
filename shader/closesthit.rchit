@@ -68,12 +68,12 @@ void main()
     InstanceOffsets off = I.offsets[gl_InstanceID];
     GeometryData geo = G.geometry[gl_GeometryIndexEXT + off.geometryOffset];
     if(geo.materialID < 0) {
-       payload.spectrum = vec3(1.0, 0.0, 1.0);
+       payload.contribution = vec3(1.0, 0.0, 1.0);
        return;
     }
     MaterialData mat = M.material[geo.materialID + off.materialOffset];
     if(mat.texID < 0) {
-        payload.spectrum = vec3(1.0, 0.0, 0.0);
+        payload.contribution = vec3(1.0, 0.0, 0.0);
         return;
     }
     const uint index = gl_PrimitiveID * 3 + geo.offsetIndexLocal + off.primitiveOffset;
@@ -85,11 +85,7 @@ void main()
 
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
     payload.contribution = color.xyz * lambert;
-
-    if(payload.depth < 3) {
-        payload.depth++;
-        vec3 newOrigin = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.01f;
-        vec3 newDirection = normalize(getDirection(rngRndVec2(payload.random)));
-        //traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, newOrigin, 0.01f, newDirection, 1000.0f, 0);
-    }
+    payload.normal = normalCur;
+    payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.01f;
+    payload.dir = normalize(getDirection(rngRndVec2(payload.random)));
 }

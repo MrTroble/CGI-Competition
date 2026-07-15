@@ -49,12 +49,8 @@ layout(binding=6, set = 2) uniform lightSources
 void main()
 {
     uint lightID = gl_InstanceCustomIndexEXT;
-    //if(lightID < L.numberOfLights){
     LightSource light = L.lights[lightID];
+    payload.dir = vec3(0);
+    payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
     payload.spectrum = light.color * payload.contribution *  light.brightness;
-    //}else{
-    //    payload.spectrum = vec3(1.0f, 1.0f, 1.0f);
-    //}
- 
-    return;
 }

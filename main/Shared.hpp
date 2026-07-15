@@ -88,8 +88,10 @@ struct Payload
 {
 	RngShader random;
 	vec3 contribution;
+	vec3 normal;
 	vec3 spectrum;
-	uint depth;
+	vec3 pos;
+	vec3 dir;
 };
 struct ShadowPayload
 {
