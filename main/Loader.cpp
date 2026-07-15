@@ -364,7 +364,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 						indexData[i] = ((uint16_t*)idData.data())[i];
 					}
 					const auto buffC = createBuffer<uint32_t>(context, indexData, vk::BufferUsageFlagBits::eTransferSrc);
-					UVCopyInfo copyIndexInfo{ buffC, 0, indexAccess.count * multi, true};
+					UVCopyInfo copyIndexInfo{ buffC, 0, indexAccess.count * multi, true };
 					out.rtxIndexCopyData.push_back(copyIndexInfo);
 				}
 				else {
@@ -506,7 +506,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			descImageInfo.sampler = out.sampler[albedoTex.sampler];
 			context.device.updateDescriptorSets(descWriteSet, {});
 			systemUsed = "USE_ALBEDO";
-			out.rtxMaterials.push_back(MaterialData{ albedoTex.source, albedoTex.sampler });
+			out.rtxMaterials.push_back(MaterialData{ albedoTex.source, albedoTex.sampler, (float)material.pbrMetallicRoughness.roughnessFactor, (float)material.pbrMetallicRoughness.metallicFactor });
 		}
 		else {
 			out.rtxMaterials.push_back(MaterialData{ -1, -1 });

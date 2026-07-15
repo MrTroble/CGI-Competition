@@ -77,7 +77,7 @@ struct Settings {
 	bool useTAA = false;
 	bool useAO = false;
 	bool useShadowMaps = false;
-	bool useRayTracing = false;	
+	bool useRayTracing = false;
 	bool accumulate = false;
 
 	RenderTillingInfo baseTillingInfo;
