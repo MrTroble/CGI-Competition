@@ -370,8 +370,13 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 					UVCopyInfo copyIndexInfo{ out.buffers[indexAccess.bufferView], indexAccess.byteOffset, indexAccess.count * multi };
 					out.rtxIndexCopyData.push_back(copyIndexInfo);
 				}
+				const auto [normalId, normalOff] = getFromInput(model, primitive, "NORMAL");
+				UVCopyInfo copyNormalInfo{ out.buffers[normalId], normalOff, vertAccess.count * sizeof(glm::vec3) };
+				out.rtxNormalCopyData.push_back(copyNormalInfo);
+
 				out.completeAmountToCopy += copyInfo.size;
 				out.completeAmountToIndexCopy += indexAccess.count * multi;
+				out.completeAmountToNormalCopy += copyNormalInfo.size;
 			}
 		}
 	}

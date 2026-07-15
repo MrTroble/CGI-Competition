@@ -490,7 +490,7 @@ inline void createRaytracingPipeline(MainContext& context) {
 	bindings[2].descriptorCount = 1;
 	bindings[2].stageFlags = vk::ShaderStageFlagBits::eRaygenKHR;
 
-	std::array<vk::DescriptorSetLayoutBinding, 7> bindingsTextures{};
+	std::array<vk::DescriptorSetLayoutBinding, 8> bindingsTextures{};
 	bindingsTextures[0].binding = 0;
 	bindingsTextures[0].descriptorType = vk::DescriptorType::eCombinedImageSampler;
 	bindingsTextures[0].descriptorCount = MAX_IMAGE_TEXTURES_RTX;
@@ -525,6 +525,11 @@ inline void createRaytracingPipeline(MainContext& context) {
 	bindingsTextures[6].descriptorType = vk::DescriptorType::eUniformBuffer;
 	bindingsTextures[6].descriptorCount = 1;
 	bindingsTextures[6].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
+
+	bindingsTextures[7].binding = 7;
+	bindingsTextures[7].descriptorType = vk::DescriptorType::eStorageBuffer;
+	bindingsTextures[7].descriptorCount = 1;
+	bindingsTextures[7].stageFlags = vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eAnyHitKHR;
 
 	vk::DescriptorSetLayoutCreateInfo desriptorLayoutInfo{ {}, 2, bindings.data() };
 	context.raytraceExt.descLayout = context.device.createDescriptorSetLayout(desriptorLayoutInfo);
@@ -593,7 +598,7 @@ inline void createRaytracingPipeline(MainContext& context) {
 		MAX_IMAGE_TEXTURES_RTX
 	} , vk::DescriptorPoolSize{
 		vk::DescriptorType::eStorageBuffer,
-		5
+		MAX_POOL
 	} };
 
 	vk::DescriptorPoolCreateInfo poolInfo{ {}, MAX_POOL, mainPoolInfos };
@@ -798,16 +803,15 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 	cmd.begin(cmdBeginInfo);
 
 	std::vector<InstanceOffsets> startIndexArray;
-	size_t amountMax = 0;
-	size_t amountInstanceMax = 0;
+	std::array<size_t, 3> amountCurrent = { 0 };
 	for (auto& model : outModels)
 	{
-		amountMax += model.completeAmountToCopy;
-		amountInstanceMax += model.completeAmountToIndexCopy;
+		amountCurrent[0] += model.completeAmountToCopy;
+		amountCurrent[1] += model.completeAmountToIndexCopy;
+		amountCurrent[2] += model.completeAmountToNormalCopy;
 	}
 	{
-		std::array amountCurrent = { amountMax,  amountInstanceMax };
-		for (size_t i = 0; i < 2; i++)
+		for (size_t i = 0; i < context.raytraceExt.additionalBuffer.size(); i++)
 		{
 			const auto usage = vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eStorageBuffer;
 			const auto buffer = context.device.createBuffer(vk::BufferCreateInfo{
@@ -823,8 +827,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 			context.raytraceExt.additionalBuffer[i] = { memory, buffer };
 		}
 
-		amountMax = 0;
-		amountInstanceMax = 0;
+		amountCurrent.fill(0);
 		for (auto& model : outModels)
 		{
 			InstanceOffsets offsetsL;
@@ -832,17 +835,18 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 			offsetsL.materialOffset = expand<MaterialData>(materialData, model.rtxMaterials);
 			offsetsL.geometryOffset = expand<GeometryData>(geometryData, model.rtxGeodata);
 			offsetsL.samplerOffset = expand<vk::Sampler>(samplerToDesc, model.sampler);
-			offsetsL.primitiveOffset = amountMax / sizeof(glm::vec2);
-			offsetsL.indexOffset = amountInstanceMax / sizeof(uint32_t);
+			offsetsL.primitiveOffset = amountCurrent[0] / sizeof(glm::vec2);
+			offsetsL.indexOffset = amountCurrent[1] / sizeof(uint32_t);
 			startIndexArray.push_back(offsetsL);
-			for (const auto& copy : model.rtxCopyData) {
-				cmd.copyBuffer(copy.buffer, context.raytraceExt.additionalBuffer[0].buffer, vk::BufferCopy{ copy.offset, amountMax, copy.size });
-				amountMax += copy.size;
-			}
-			for (const auto& copy : model.rtxIndexCopyData)
+			std::array spans = { std::span{model.rtxCopyData}, std::span{model.rtxIndexCopyData}, std::span{model.rtxNormalCopyData} };
+			size_t currentLocalIndex = 0;
+			for (auto& amountMax : amountCurrent)
 			{
-				cmd.copyBuffer(copy.buffer, context.raytraceExt.additionalBuffer[1].buffer, vk::BufferCopy{ copy.offset, amountInstanceMax, copy.size });
-				amountInstanceMax += copy.size;
+				const auto currentIndex = currentLocalIndex++;
+				for (const auto& copy : spans[currentIndex]) {
+					cmd.copyBuffer(copy.buffer, context.raytraceExt.additionalBuffer[currentIndex].buffer, vk::BufferCopy{ copy.offset, amountMax, copy.size });
+					amountMax += copy.size;
+				}
 			}
 		}
 	}
@@ -882,6 +886,9 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 	bufferInfoLocal.setBuffer(context.lightSources.buffer);
 	lightdesLocal.setDstBinding(6);
 	context.device.updateDescriptorSets(lightdesLocal, {});
+	bufferInfoLocal.setBuffer(context.raytraceExt.additionalBuffer[2].buffer);
+	arrayDescLocal.setDstBinding(7);
+	context.device.updateDescriptorSets(arrayDescLocal, {});
 
 	if (!samplerToDesc.empty()) {
 		const auto sampler = samplerToDesc[0]; // TODO BETTER WAY

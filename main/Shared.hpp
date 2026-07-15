@@ -88,6 +88,7 @@ struct Payload
 	RngShader random;
 	vec3 contribution;
 	vec3 spectrum;
+	uint depth;
 };
 
 struct LightSource {
