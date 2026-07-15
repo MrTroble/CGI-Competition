@@ -34,6 +34,7 @@ void main()
     payload.spectrum = vec3(0.0);
     payload.contribution = vec3(1.0f);
     rngInit(payload.random, uint(pixel.x), uint(pixel.y), 0, 11700);
+    payload.depth = 0;
 
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
     imageStore(image, pixel, vec4(payload.spectrum, 1.0));
