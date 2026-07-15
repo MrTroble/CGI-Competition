@@ -79,8 +79,10 @@ void main()
     const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
     const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
     vec4 color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
-    
     const vec3 normalCur = normalize(bary.x * NORM.normal[currentIds.x] + bary.y * NORM.normal[currentIds.y] + bary.z * NORM.normal[currentIds.z]);
+
+    payload.spectrum = vec3(NORM.normal[currentIds.x]);
+
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
     payload.contribution = color.xyz * lambert;
 
@@ -88,7 +90,6 @@ void main()
         payload.depth++;
         vec3 newOrigin = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT + normalCur * 0.01f;
         vec3 newDirection = normalize(getDirection(rngRndVec2(payload.random)));
-        payload.spectrum = vec3(normalCur);
         //traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, newOrigin, 0.01f, newDirection, 1000.0f, 0);
     }
 }
