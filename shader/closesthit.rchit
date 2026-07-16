@@ -151,10 +151,6 @@ void main()
     vec3 cleanPos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
     payload.pos = cleanPos;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random), normalCur));
-    float pdf = M_PI / dot(payload.dir, normalCur);
-
-    payload.contribution *= pdf;
-
 	//vec3 tangentPre = (dYuv.t * dFdx(positionIn) - dXuv.t * dFdy(positionIn)) /
     //   (dXuv.s * dYuv.t - dYuv.s * dXuv.t);
 	//vec3 tangent = normalize(tangentPre - normN * dot(normN, tangentPre));
@@ -167,6 +163,8 @@ void main()
 
     //payload.spectrum = vec3(roughMetal, 0.0f);return;
 
+    payload.contribution *= M_PI * lambert;
+
     shadowPayload.isOccluded = true;
     vec3 neeDir = normalize(lS.position - payload.pos);
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.001f, neeDir, 10000, 1);
@@ -174,5 +172,5 @@ void main()
         float pdf = dot(neeDir, normalCur) / length(lS.position - payload.pos) * L.numberOfLights;
         payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz);
     }
-    payload.contribution *= getGGX(payload.dir, normalCur, roughMetal, color.xyz);
+    payload.contribution *= getGGX(payload.dir, normalCur, roughMetal, color.xyz)  / dot(normalCur, payload.dir);
 }

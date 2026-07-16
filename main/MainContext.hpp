@@ -209,8 +209,8 @@ struct MainContext {
 	ArrayBuffer lightListUpload;
 	vk::DescriptorSetLayout lightListLayout;
 
-	std::size_t numberOfLights = 3;
-	std::size_t numberOfLightsWithShadowMaps = 3;
+	std::size_t numberOfLights = 1;
+	std::size_t numberOfLightsWithShadowMaps = 1;
 };
 
 inline std::vector<uint8_t> loadFile(const std::string& value) {
