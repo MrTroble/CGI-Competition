@@ -56,7 +56,7 @@ void createLightSources(MainContext& context) {
 		float brightness = rngRndFloat(context.rng);
 		glm::vec3 color = rngRndVec3(context.rng);
 		if (i == 0) {
-			position = glm::vec3(-0.9, 3.0, 0.0);
+			position = glm::vec3(0, 1.5, 3.0);
 			brightness = 3.0;
 			direction = glm::vec3(1.0, 1.0, 1.0);
 			color = glm::vec3(1.0, 1.0, 1.0);

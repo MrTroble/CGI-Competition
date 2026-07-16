@@ -41,7 +41,7 @@ void main()
     payload.contribution = vec3(1.0f);
     rngInit(payload.random, uint(pixel.x), uint(pixel.y), camera.frameCount, 11700);
     
-    for(uint i = 0; i < 3; i++) {
+    for(uint i = 0; i < 5; i++) {
         traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
         origin = vec4(payload.pos, 1);
         direction = vec4(payload.dir, 1);

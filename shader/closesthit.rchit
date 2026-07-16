@@ -85,7 +85,7 @@ float GeoTerm(float alpha, vec3 o, vec3 v, vec3 n, vec3 h) {
     float alphaSqrd = alpha * alpha;
     float G1 = nDotO + sqrt((1.0 - alphaSqrd) * nDotV * nDotV + alphaSqrd);
     float G2 = nDotV + sqrt((1.0 - alphaSqrd) * nDotO * nDotO + alphaSqrd);
-    if(G1 * G2 <= 0.0f) return 0.0f;
+    if(G1 * G2 == 0.0f) return 0.0f;
     return 1.0f / (G1 * G2);
 }
 
@@ -110,9 +110,9 @@ vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color) {
     float tanThe = tan(acos(nDotH));
     float alphaRoughnessSq = alpha * alpha;
     float f = nDotH * nDotH * (alphaRoughnessSq - 1.0) + 1.0;
-    float ggxD = float(alpha * alpha) / float(M_PI * f * f);
-    if(f <= 0.0f || nDotH <= 0.0f) ggxD = 0.0f;
-
+    float ggxD = float(alphaRoughnessSq) / float(M_PI * f * f);
+    if(nDotH <= 0.0f) ggxD = 0.0f;
+    
     //GGX G
     float ggxG = GeoTerm(alpha, wo, -gl_WorldRayDirectionEXT, normalCur, h);
     vec3 dialectric = fresnel_mix(1.5f, (color / M_PI), vec3(ggxG * ggxD), vDotH);
@@ -141,12 +141,15 @@ void main()
     if(mat.roughnessID >= 0) {
         roughMetal *= texture(textures[nonuniformEXT(mat.roughnessID + off.textureOffset)], uvCur).yz;
     }
-    const vec3 normalCur = normalize(bary.x * NORM.normal[currentIds.x].xyz + bary.y * NORM.normal[currentIds.y].xyz + bary.z * NORM.normal[currentIds.z].xyz);
+    vec3 normalCur = normalize(bary.x * NORM.normal[currentIds.x].xyz + bary.y * NORM.normal[currentIds.y].xyz + bary.z * NORM.normal[currentIds.z].xyz);
+    if(dot(normalCur, -gl_WorldRayDirectionEXT) < 0) {
+        normalCur *= -1;
+    }
 
     const float lambert = max(0, dot(-gl_WorldRayDirectionEXT, normalCur));
     payload.normal = normalCur;
     vec3 cleanPos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
-    payload.pos = cleanPos + normalCur * 0.001f;
+    payload.pos = cleanPos;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random), normalCur));
     float pdf = M_PI / dot(payload.dir, normalCur);
 
@@ -166,7 +169,7 @@ void main()
 
     shadowPayload.isOccluded = true;
     vec3 neeDir = normalize(lS.position - payload.pos);
-    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.0f, neeDir, 10000, 1);
+    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.001f, neeDir, 10000, 1);
     if(!shadowPayload.isOccluded) {
         float pdf = dot(neeDir, normalCur) / length(lS.position - payload.pos) * L.numberOfLights;
         payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz);
