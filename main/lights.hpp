@@ -57,20 +57,21 @@ void createLightSources(MainContext& context) {
 		glm::vec3 color = rngRndVec3(context.rng);
 		if (i == 0) {
 			position = glm::vec3(-0.9, 3.0, 0.0);
-			brightness = 1.0;
-			direction = glm::vec3(1.0, 0.0, 0.0);
+			brightness = 3.0;
+			direction = glm::vec3(1.0, 1.0, 1.0);
+			color = glm::vec3(1.0, 1.0, 1.0);
 		}
 		if(i == 1) {
 		    position = glm::vec3(7.0, 8.0, -10.0);
-			brightness = 0.3f;
+			brightness = 3.3f;
 			direction = glm::vec3(2.0, -2.0, 2.0);
-			color = glm::vec3(1.0, 0.0, 1.0);
+			color = glm::vec3(1.0, 1.0, 1.0);
 		}
 		if(i == 2) {
             position = glm::vec3(7, 4, 6.0);
-            brightness = 1.0;
+            brightness = 3.0;
             direction = glm::vec3(-1.0, -2.0, 0.0);
-            color = glm::vec3(0.0, 0.0, 1.0);
+            color = glm::vec3(1.0, 1.0, 1.0);
 		}
 
 		LightSource light = LightSource{

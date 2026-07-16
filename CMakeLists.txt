@@ -47,3 +47,6 @@ add_subdirectory("main")
 
 configure_file("assets/provence.glb" "assets/provence.glb" COPYONLY)
 configure_file("assets/cube.glb" "assets/cube.glb" COPYONLY)
+configure_file("assets/DamagedHelmet.glb" "assets/DamagedHelmet.glb" COPYONLY)
+configure_file("assets/MetalRoughSpheresNoTextures.glb" "assets/MetalRoughSpheresNoTextures.glb" COPYONLY)
+configure_file("assets/MetalRoughSpheres.glb" "assets/MetalRoughSpheres.glb" COPYONLY)

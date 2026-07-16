@@ -1269,7 +1269,8 @@ inline void createTAA(MainContext& context) {
 inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& outmodels) {
 	GLTFLoader loader;
 	outmodels.resize(1 + context.lights.size());
-	loader.load(context, "assets/provence.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f) });
+	//loader.load(context, "assets/provence.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f) });
+	loader.load(context, "assets/MetalRoughSpheres.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f, 1.0f, 0.0f) });
 
 	std::cout << "Loading " << context.lights.size() << " debug cubes for lights" << std::endl;
 	for (std::size_t i = 0; i < context.lights.size(); i++) {

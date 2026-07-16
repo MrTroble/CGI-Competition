@@ -67,6 +67,7 @@ vec3 rngRndVec3(inout RngShader rng) {
 struct MaterialData {
 	int texID;
 	int samplerID;
+	int roughnessID;
 	float roughness;
 	float metallic;
 };

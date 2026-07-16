@@ -52,5 +52,5 @@ void main()
     LightSource light = L.lights[lightID];
     payload.dir = vec3(0);
     payload.pos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
-    payload.spectrum += light.color * payload.contribution *  light.brightness;
+    //payload.spectrum += light.color * payload.contribution *  light.brightness;
 }
