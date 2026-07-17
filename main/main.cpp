@@ -1268,10 +1268,10 @@ inline void createTAA(MainContext& context) {
 
 inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& outmodels) {
 	GLTFLoader loader;
-	outmodels.resize(1 + context.lights.size());
-	//loader.load(context, "assets/provence.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f) });
+	outmodels.resize(2 + context.lights.size());
+	loader.load(context, "assets/provence.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f) });
 	//loader.load(context, "assets/DamagedHelmet.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f, 1.0f, 0.0f) });	
-    loader.load(context, "assets/MetalRoughSpheres.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f, 1.0f, 0.0f) });
+    loader.load(context, "assets/MetalRoughSpheres.glb", outmodels[1], ModelConfig{ .position = glm::vec3(3.0f, 4.5f, -10.0f) });
 
 	std::cout << "Loading " << context.lights.size() << " debug cubes for lights" << std::endl;
 	for (std::size_t i = 0; i < context.lights.size(); i++) {
@@ -1279,7 +1279,7 @@ inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& out
 		loader.load(
 			context,
 			"assets/cube.glb",
-			outmodels[1 + i],
+			outmodels[2 + i],
 			ModelConfig{ .fillMode = vk::PolygonMode::eLine, .position = light.position, .scale = 0.3f,
 						 .shaderBindingOffset = 1 },// TODO Change shader binding for RTX
 			i

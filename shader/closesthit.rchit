@@ -130,8 +130,8 @@ void main()
     }
     const MaterialData mat = M.material[geo.materialID + off.materialOffset];
     vec4 color = vec4(0.5f, 0.5f, 0.5f, 1.0f);
-    const uint index = gl_PrimitiveID * 3 + geo.offsetIndexLocal + off.primitiveOffset;
-    const uvec3 currentIds = uvec3(ID.ids[index], ID.ids[index + 1], ID.ids[index + 2]) + uvec3(geo.offsetVertexLocal);
+    const uint index = gl_PrimitiveID * 3 + geo.offsetIndexLocal + off.indexOffset;
+    const uvec3 currentIds = uvec3(ID.ids[index], ID.ids[index + 1], ID.ids[index + 2]) + uvec3(geo.offsetVertexLocal + off.primitiveOffset);
     const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
     const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
     if(mat.texID >= 0) {
@@ -161,7 +161,7 @@ void main()
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
     LightSource lS = L.lights[indexLight];
 
-    //payload.spectrum = vec3(roughMetal, 0.0f);return;
+    //payload.spectrum = vec3(uvCur, 0.0f);return;
 
     payload.contribution *= M_PI * lambert;
 
