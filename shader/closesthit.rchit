@@ -133,7 +133,7 @@ void main()
     const uint index = gl_PrimitiveID * 3 + geo.offsetIndexLocal + off.indexOffset;
     const uvec3 currentIds = uvec3(ID.ids[index], ID.ids[index + 1], ID.ids[index + 2]) + uvec3(geo.offsetVertexLocal + off.primitiveOffset);
     const vec3 bary = vec3(1.0f - attribs.x - attribs.y, attribs.x, attribs.y);
-    const vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
+    vec2 uvCur = bary.x * UV.uvs[currentIds.x] + bary.y * UV.uvs[currentIds.y] + bary.z * UV.uvs[currentIds.z];
     if(mat.texID >= 0) {
         color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
     }
@@ -151,26 +151,19 @@ void main()
     vec3 cleanPos = gl_WorldRayDirectionEXT * gl_HitTEXT + gl_WorldRayOriginEXT;
     payload.pos = cleanPos;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random), normalCur));
-	//vec3 tangentPre = (dYuv.t * dFdx(positionIn) - dXuv.t * dFdy(positionIn)) /
-    //   (dXuv.s * dYuv.t - dYuv.s * dXuv.t);
-	//vec3 tangent = normalize(tangentPre - normN * dot(normN, tangentPre));
-	//vec3 bitangent = normalize(cross(tangent, normalCur));
-	//vec3 normaleVTex = mat3(tangent, bitangent, normalCur) * texture(normalTex, uv1In).rgb;
 
     // NEE
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
     LightSource lS = L.lights[indexLight];
 
-    //payload.spectrum = vec3(uvCur, 0.0f);return;
-
-    payload.contribution *= M_PI * lambert;
-
+   // payload.contribution *= color.xyz;
+    vec3 woNee = lS.position - payload.pos;
     shadowPayload.isOccluded = true;
-    vec3 neeDir = normalize(lS.position - payload.pos);
+    vec3 neeDir = normalize(woNee);
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.001f, neeDir, 10000, 1);
     if(!shadowPayload.isOccluded) {
-        float pdf = dot(neeDir, normalCur) / length(lS.position - payload.pos) * L.numberOfLights;
-        payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz);
+        float pdf = dot(neeDir, normalCur) * L.numberOfLights;
+        payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz) / dot(woNee,woNee);
     }
-    payload.contribution *= getGGX(payload.dir, normalCur, roughMetal, color.xyz)  / dot(normalCur, payload.dir);
+    payload.contribution *= M_PI * getGGX(payload.dir, normalCur, roughMetal, color.xyz)  ;/// dot(normalCur, payload.dir);
 }

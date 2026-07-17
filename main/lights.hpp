@@ -41,37 +41,37 @@ void allocateShadowMaps(MainContext& context) {
 }
 
 void createLightSources(MainContext& context) {
-    std::vector<LightSource> lights(context.numberOfLights);
+	std::vector<LightSource> lights(context.numberOfLights);
 
-    const auto width = 50.0f;
+	const auto width = 50.0f;
 
-    for (std::size_t i = 0; i < context.numberOfLights; i++) {
-        glm::vec3 position = rngRndVec3(context.rng);
-        position.x *= 2 * width;
-        position.x -= width;
-        position.z = position.z * 2.0f * width - width;
-        position.y *= 20.0f;
+	for (std::size_t i = 0; i < context.numberOfLights; i++) {
+		glm::vec3 position = rngRndVec3(context.rng);
+		position.x *= 2 * width;
+		position.x -= width;
+		position.z = position.z * 2.0f * width - width;
+		position.y *= 20.0f;
 
 		glm::vec3 direction = normalize(rngRndVec3(context.rng));
 		float brightness = rngRndFloat(context.rng);
 		glm::vec3 color = rngRndVec3(context.rng);
 		if (i == 0) {
 			position = glm::vec3(0, 1.5, 3.0);
-			brightness = 3.0;
+			brightness = 100.0;
 			direction = glm::vec3(1.0, 1.0, 1.0);
 			color = glm::vec3(1.0, 1.0, 1.0);
 		}
-		if(i == 1) {
-		    position = glm::vec3(7.0, 8.0, -10.0);
-			brightness = 10.0f;
+		if (i == 1) {
+			position = glm::vec3(7.0, 8.0, -10.0);
+			brightness = 100.0f;
 			direction = glm::vec3(2.0, -2.0, 2.0);
 			color = glm::vec3(1.0, 1.0, 1.0);
 		}
-		if(i == 2) {
-            position = glm::vec3(7, 4, 6.0);
-            brightness = 3.0f;
-            direction = glm::vec3(-1.0, -2.0, 0.0);
-            color = glm::vec3(1.0, 1.0, 1.0);
+		if (i == 2) {
+			position = glm::vec3(7, 4, 6.0);
+			brightness = 100.0f;
+			direction = glm::vec3(-1.0, -2.0, 0.0);
+			color = glm::vec3(1.0, 1.0, 1.0);
 		}
 
 		LightSource light = LightSource{
@@ -124,28 +124,28 @@ void createLightSources(MainContext& context) {
 	const auto poolCreateInfo = vk::DescriptorPoolCreateInfo({}, 1, poolSizes);
 	auto pool = context.device.createDescriptorPool(poolCreateInfo);
 
-    // Create descriptor sets
-    std::vector<vk::DescriptorSetLayout> descriptorSetLayouts(1, context.lightSourceLayout);
+	// Create descriptor sets
+	std::vector<vk::DescriptorSetLayout> descriptorSetLayouts(1, context.lightSourceLayout);
 
-    const auto descriptorAllocateInfo = vk::DescriptorSetAllocateInfo(pool, descriptorSetLayouts);
-    const auto descriptors = context.device.allocateDescriptorSets(descriptorAllocateInfo);
+	const auto descriptorAllocateInfo = vk::DescriptorSetAllocateInfo(pool, descriptorSetLayouts);
+	const auto descriptors = context.device.allocateDescriptorSets(descriptorAllocateInfo);
 
 	std::array<vk::DescriptorImageInfo, NUMBER_OF_BIG_LIGHTS> shadowMapImageInfos;
 	for (std::size_t i = 0; i < NUMBER_OF_BIG_LIGHTS; i++) {
 		const auto sampler = context.device.createSampler(vk::SamplerCreateInfo(
-				{},
-				vk::Filter::eNearest,
-				vk::Filter::eNearest,
-				vk::SamplerMipmapMode::eNearest,
-				vk::SamplerAddressMode::eRepeat,
-				vk::SamplerAddressMode::eRepeat,
-				vk::SamplerAddressMode::eRepeat,
-				{},
-				{},
-				{},
-				true,
-				vk::CompareOp::eLess
-			));
+			{},
+			vk::Filter::eNearest,
+			vk::Filter::eNearest,
+			vk::SamplerMipmapMode::eNearest,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			vk::SamplerAddressMode::eRepeat,
+			{},
+			{},
+			{},
+			true,
+			vk::CompareOp::eLess
+		));
 		const auto imageInfo = vk::DescriptorImageInfo(sampler, context.shadowMapContext.shadowMapViews[i], vk::ImageLayout::eDepthStencilReadOnlyOptimal);
 		shadowMapImageInfos[i] = imageInfo;
 	}
@@ -158,53 +158,53 @@ void createLightSources(MainContext& context) {
 	const auto writeDescriptorSets = { lightSourceListWrite, shadowMapWrite, shadowMapMatrixWrite };
 	context.device.updateDescriptorSets(writeDescriptorSets, {});
 
-    context.lightSources = ArrayBuffer{
-        pool,
-        descriptors,
-        buffer
-    };
+	context.lightSources = ArrayBuffer{
+		pool,
+		descriptors,
+		buffer
+	};
 
 	context.shadowMapContext.shadowMapMatrices = shadowMapMatrixMemory;
 
-    static constexpr uint32_t LIGHT_LIST_AMOUNT = MAX_TILLING * MAX_TILLING * MAX_TILLING;
-    LightList lightList;
-    lightList.amount = lights.size();
-    std::iota(std::begin(lightList.ids), std::begin(lightList.ids) + lightList.amount, 0u);
-    context.lightLists.resize(LIGHT_LIST_AMOUNT, lightList);
-    context.lightListUpload = createArrayBuffer<LightList>(context, context.lightLists, context.lightListLayout);
-    context.lights = std::move(lights);
+	static constexpr uint32_t LIGHT_LIST_AMOUNT = MAX_TILLING * MAX_TILLING * MAX_TILLING;
+	LightList lightList;
+	lightList.amount = lights.size();
+	std::iota(std::begin(lightList.ids), std::begin(lightList.ids) + lightList.amount, 0u);
+	context.lightLists.resize(LIGHT_LIST_AMOUNT, lightList);
+	context.lightListUpload = createArrayBuffer<LightList>(context, context.lightLists, context.lightListLayout);
+	context.lights = std::move(lights);
 }
 
 struct AABB {
-    glm::vec3 min;
-    glm::vec3 max;
+	glm::vec3 min;
+	glm::vec3 max;
 };
 
 bool overlapp(const AABB& aabb1, const AABB& aabb2) {
 	return (aabb1.min.x <= aabb2.max.x && aabb1.max.x >= aabb2.min.x) &&
-		   (aabb1.min.y <= aabb2.max.y && aabb1.max.y >= aabb2.min.y) &&
-		   (aabb1.min.z <= aabb2.max.z && aabb1.max.z >= aabb2.min.z);
+		(aabb1.min.y <= aabb2.max.y && aabb1.max.y >= aabb2.min.y) &&
+		(aabb1.min.z <= aabb2.max.z && aabb1.max.z >= aabb2.min.z);
 }
 
 AABB clipAABB(const AABB& aabb) {
-    return { glm::min(aabb.min, aabb.max), glm::max(aabb.min, aabb.max)};
+	return { glm::min(aabb.min, aabb.max), glm::max(aabb.min, aabb.max) };
 }
 
 inline uint32_t indexFrom(const glm::uvec3& tile, const RenderTillingInfo& info) {
-    return tile.x + tile.y * info.xAmount + tile.z * info.xAmount * info.yAmount;
+	return tile.x + tile.y * info.xAmount + tile.z * info.xAmount * info.yAmount;
 }
 
 void rebuildLightLists(MainContext& context) {
 
-    glm::vec3 leftOffset(10, 10, 10);
-    glm::vec3 rightOffset = leftOffset * -1.0f;
-    std::vector<AABB> screenSpaceAABBs(context.lights.size());
-    std::transform(context.lights.begin(), context.lights.end(), screenSpaceAABBs.begin(),
-        [&](LightSource& source) {
-            return clipAABB(AABB{ source.position + leftOffset * source.brightness,
+	glm::vec3 leftOffset(10, 10, 10);
+	glm::vec3 rightOffset = leftOffset * -1.0f;
+	std::vector<AABB> screenSpaceAABBs(context.lights.size());
+	std::transform(context.lights.begin(), context.lights.end(), screenSpaceAABBs.begin(),
+		[&](LightSource& source) {
+			return clipAABB(AABB{ source.position + leftOffset * source.brightness,
 						 source.position + rightOffset * source.brightness });
-        });
-    const auto& tile = context.settings.baseTillingInfo;
+		});
+	const auto& tile = context.settings.baseTillingInfo;
 	const auto vp = glm::inverse(context.cameraNodeData.mvp);
 	glm::vec3 step = glm::vec3(2.0f, 2.0f, 1.0f) / glm::vec3(tile.xAmount, tile.yAmount, tile.zAmount);
 	std::vector<AABB> aabbsOf(tile.xAmount * tile.yAmount * tile.zAmount);
@@ -220,7 +220,7 @@ void rebuildLightLists(MainContext& context) {
 				glm::vec3 max(-std::numeric_limits<float>::max());
 				for (size_t i = 0; i < 8; i++)
 				{
-					glm::uvec3 index(x + (i & 1 ? 1:0), y + (i & 2 ? 1 : 0), z + (i & 4 ? 1 : 0));
+					glm::uvec3 index(x + (i & 1 ? 1 : 0), y + (i & 2 ? 1 : 0), z + (i & 4 ? 1 : 0));
 					auto position = step * glm::vec3(index) + glm::vec3(-1.0f, -1.0f, 0.0f);
 					auto wPos = vp * glm::vec4(position, 1.0f);
 					wPos /= wPos.w;
@@ -232,9 +232,9 @@ void rebuildLightLists(MainContext& context) {
 		}
 	}
 
-    uint32_t currentLight = 0;
-    for(auto& ll : context.lightLists) ll.amount = 0;
-    for (const auto& aabb : screenSpaceAABBs) {
+	uint32_t currentLight = 0;
+	for (auto& ll : context.lightLists) ll.amount = 0;
+	for (const auto& aabb : screenSpaceAABBs) {
 		for (size_t x = 0; x < tile.xAmount; x++)
 		{
 			for (size_t y = 0; y < tile.yAmount; y++)
@@ -254,8 +254,8 @@ void rebuildLightLists(MainContext& context) {
 			}
 		}
 		currentLight++;
-    }
-    
-    auto startPtr = (uint8_t*)context.lightLists.data();
-    updateMemory(context, context.lightListUpload.memory, std::span{ startPtr, context.lightLists.size() * sizeof(LightList)});
+	}
+
+	auto startPtr = (uint8_t*)context.lightLists.data();
+	updateMemory(context, context.lightListUpload.memory, std::span{ startPtr, context.lightLists.size() * sizeof(LightList) });
 }
