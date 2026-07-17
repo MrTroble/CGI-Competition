@@ -49,7 +49,7 @@ struct OutputModel {
 struct ModelConfig {
 	vk::PolygonMode fillMode = vk::PolygonMode::eFill;
 	glm::vec3 position{};
-	float scale = 1.0;
+	glm::vec3 scale = glm::vec3(1.0f);
 	size_t shaderBindingOffset = 0;
 };
 

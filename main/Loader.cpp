@@ -281,7 +281,7 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
     cmdBeginInfo.pInheritanceInfo = &inharitance;
     cmdBeginInfo.setFlags(vk::CommandBufferUsageFlagBits::eRenderPassContinue);
 
-    const auto transformMatrix = glm::scale(glm::translate(glm::mat4(1.0f), config.position), glm::vec3(config.scale));
+    const auto transformMatrix = glm::scale(glm::translate(glm::mat4(1.0f), config.position), config.scale);
     std::vector<PerNodeData> nodeMatrix(model.nodes.size(), { transformMatrix });
     std::vector<vk::AccelerationStructureGeometryKHR> geometryData;
     std::vector<vk::AccelerationStructureGeometryKHR> instanceBasedData;
