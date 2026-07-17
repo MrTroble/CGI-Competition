@@ -102,7 +102,7 @@ vec3 fresnel_mix(float ior, vec3 base, vec3 layer, float VdotH) {
 }
 
 vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color) {
-    float alpha = roughMetal.y*roughMetal.y;
+    float alpha = roughMetal.x*roughMetal.x;
     vec3 h = normalize(-gl_WorldRayDirectionEXT + wo);
 
     float vDotH = dot(-gl_WorldRayDirectionEXT, h);
@@ -117,7 +117,7 @@ vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color) {
     float ggxG = GeoTerm(alpha, wo, -gl_WorldRayDirectionEXT, normalCur, h);
     vec3 dialectric = fresnel_mix(1.5f, (color / M_PI), vec3(ggxG * ggxD), vDotH);
     vec3 metallic = conductor_fresnel(color, vec3(ggxG * ggxD), vDotH);
-    return mix(dialectric, metallic, roughMetal.x);
+    return mix(dialectric, metallic, roughMetal.y);
 }
 
 void main()
@@ -137,7 +137,7 @@ void main()
     if(mat.texID >= 0) {
         color = texture(textures[nonuniformEXT(mat.texID + off.textureOffset)], uvCur);
     }
-    vec2 roughMetal = vec2(mat.metallic, mat.roughness);
+    vec2 roughMetal = vec2(mat.roughness, mat.metallic);
     if(mat.roughnessID >= 0) {
         roughMetal *= texture(textures[nonuniformEXT(mat.roughnessID + off.textureOffset)], uvCur).yz;
     }
