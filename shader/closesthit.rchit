@@ -152,11 +152,33 @@ void main()
     payload.pos = cleanPos;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random), normalCur));
 
+
+float metallic = roughMetal.y;
+float roughness = roughMetal.x;
+
+vec3 F0 = mix(vec3(0.04),color.xyz, metallic);
+float specChance = clamp(max(max(F0.r, F0.g), F0.b), 0.05, 0.95);
+
+
+if(rngRndFloat(payload.random) < specChance)
+{
+    vec3 reflection = reflect( gl_WorldRayDirectionEXT, normalCur);
+    if(roughness == 0){
+      payload.dir = reflection;
+    }
+   else if(roughness > 0.001)
+    {
+      vec3 roughReflection = getDirection( rngRndVec2(payload.random), reflection);
+      reflection = normalize(mix(reflection, roughReflection, roughness));
+    }
+    payload.dir = reflection;
+    payload.contribution *= F0 / specChance;
+}else
+{
     // NEE
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
     LightSource lS = L.lights[indexLight];
 
-   // payload.contribution *= color.xyz;
     vec3 woNee = lS.position - payload.pos;
     shadowPayload.isOccluded = true;
     vec3 neeDir = normalize(woNee);
@@ -165,5 +187,6 @@ void main()
         float pdf = dot(neeDir, normalCur) * L.numberOfLights;
         payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz) / dot(woNee,woNee);
     }
-    payload.contribution *= M_PI * getGGX(payload.dir, normalCur, roughMetal, color.xyz)  ;/// dot(normalCur, payload.dir);
+    payload.contribution *= M_PI * getGGX(payload.dir, normalCur, roughMetal, color.xyz) * (1.0-metallic) / (1.0-specChance);
+
 }
