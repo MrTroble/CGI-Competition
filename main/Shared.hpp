@@ -95,6 +95,7 @@ struct Payload
 	vec3 spectrum;
 	vec3 pos;
 	vec3 dir;
+	bool miss;
 };
 struct ShadowPayload
 {

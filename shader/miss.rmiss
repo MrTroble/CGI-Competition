@@ -7,5 +7,6 @@ layout(location = 0) rayPayloadInEXT Payload payload;
 
 void main()
 {
-    payload.spectrum = vec3(0.2, 0.4, 1.0); // Blau
+    payload.miss = true;
+    payload.spectrum += vec3(0, 0, 0.0); 
 }

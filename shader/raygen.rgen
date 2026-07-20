@@ -45,6 +45,7 @@ void main()
         traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0, origin.xyz, tmin, direction.xyz, tmax, 0);
         origin = vec4(payload.pos, 1);
         direction = vec4(payload.dir, 1);
+        if(payload.miss) break;
     }
     float translation = float(camera.frameCount - 1) / float(camera.frameCount);
     if(camera.frameCount <= 1) translation = 0;

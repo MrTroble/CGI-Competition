@@ -122,6 +122,7 @@ vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color) {
 
 void main()
 {
+   payload.miss = false;
     const InstanceOffsets off = I.offsets[gl_InstanceID];
     const GeometryData geo = G.geometry[gl_GeometryIndexEXT + off.geometryOffset];
     if(geo.materialID < 0) {
@@ -173,8 +174,7 @@ if(rngRndFloat(payload.random) < specChance)
     }
     payload.dir = reflection;
     payload.contribution *= F0 / specChance;
-}else
-{
+}else{
     // NEE
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
     LightSource lS = L.lights[indexLight];
@@ -189,4 +189,5 @@ if(rngRndFloat(payload.random) < specChance)
     }
     payload.contribution *= M_PI * getGGX(payload.dir, normalCur, roughMetal, color.xyz) * (1.0-metallic) / (1.0-specChance);
 
+    }
 }
