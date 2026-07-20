@@ -17,14 +17,6 @@ message(${Vulkan_GLSLC_EXECUTABLE})
 
 include(FetchContent)
 
-FetchContent_Declare(
-    OIDN
-    URL https://github.com/OpenImageDenoise/oidn/releases/download/v2.5.0/oidn-2.5.0.x64.windows.zip
-)
-FetchContent_MakeAvailable(OIDN)
-include_directories(${oidn_SOURCE_DIR}/include/OpenImageDenoise)
-link_directories(${oidn_SOURCE_DIR}/lib)
-
 file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/shader")
 file(GLOB files "shader/*.vert" "shader/*.frag" "shader/*.rchit" "shader/*.rmiss" "shader/*.rgen")
 list(APPEND PERMUTATION_SHADER "USE_ALBEDO" "USE_ALB_NORM")

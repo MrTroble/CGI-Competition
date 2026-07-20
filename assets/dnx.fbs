@@ -1,0 +1,281 @@
+namespace denox.dnx;
+
+file_extension "dnx";
+file_identifier "dnxx";
+
+enum ScalarType:ubyte { 
+  I16=0, 
+  U16=1, 
+  I32=2, 
+  U32=3, 
+  I64=4, 
+  U64=5, 
+  F16=6, 
+  F32=7, 
+  F64=8
+}
+
+table SymRef {
+  sid:uint;   // Index into sym_ir.ops
+}
+
+table ScalarLiteral {
+  dtype:ScalarType;
+  bytes:[ubyte];
+}
+
+union ScalarSource { 
+  literal:ScalarLiteral, 
+  symbolic:SymRef 
+}
+
+table PushConstantField {
+  dtype:ScalarType;         
+  offset:ushort;            
+  source:ScalarSource;      
+}
+
+table PushConstant {
+  size:ushort;
+  fields:[PushConstantField];
+}
+
+enum Access:ubyte { 
+  ReadOnly=0,
+  WriteOnly=1, 
+  ReadWrite=2 
+}
+
+table DescriptorBinding {
+  binding:ushort;
+  access:Access;
+  tensor:uint;
+}
+
+table DescriptorSetBinding {
+  set:ushort;
+  bindings:[DescriptorBinding];
+}
+table DispatchInfo {
+  name:string;
+  debug_info:string;
+  src_path:string;
+  memory_reads:ScalarSource;
+  memory_writes:ScalarSource;
+  flops:ScalarSource;
+}
+
+table ComputeDispatchRequirements {
+  fixed_subgroup_size:uint32; // <- 0 indicates none
+  required_coopmat_shapes:[CoopmatShape];
+  required_shared_memory:uint32;
+}
+
+table ComputeDispatch {
+  binary_id:uint32;
+  workgroup_count_x:ScalarSource;
+  workgroup_count_y:ScalarSource;
+  workgroup_count_z:ScalarSource;
+  entry_point:string;
+  bindings:[DescriptorSetBinding];
+  push_constant: PushConstant; 
+
+  info:DispatchInfo;
+  requirements:ComputeDispatchRequirements;
+}
+
+table Buffer {
+  size:ScalarSource;
+  alignment:ushort;
+}
+
+enum TensorFormat:ushort {
+  UNKNOWN,
+  SSBO_HWC,
+  SSBO_CHW,
+  SSBO_CHWC8,
+  TEX_RGBA,
+  TEX_RGB,
+  TEX_RG,
+  TEX_R
+}
+
+enum TensorStorage:ushort{
+  StorageBuffer,
+  StorageImage,
+  SampledStorageImage,
+}
+
+table TensorInfo {
+  width:ScalarSource; 
+  height:ScalarSource; 
+  channels:ScalarSource;
+  format:TensorFormat;
+  storage:TensorStorage;
+  type:ScalarType;
+  name:string;
+}
+
+table Tensor {
+  buffer:uint;
+  offset:ScalarSource;
+  size:ScalarSource;
+  info:TensorInfo;
+}
+
+enum SymIROpCode:uint16 {
+  NOP = 0,
+  ADD = 1,
+  SUB = 2,
+  MUL = 3,
+  DIV = 4,
+  MOD = 5,
+  MIN = 6,
+  MAX = 7,
+  LHSC = 0x8000, // lhs is constant
+  RHSC = 0x4000, // rhs is constant
+}
+
+struct SymIROp  {
+  opcode:SymIROpCode;
+  lhs:int64;
+  rhs:int64;
+}
+
+table SymIR {
+  var_count:uint16;
+  ops:[SymIROp];
+}
+
+table TensorInitializer {
+  tensor:uint (key);
+  data:[ubyte];
+}
+
+enum Version:ushort {
+  DNX_VERSION_1_0,
+}
+
+table DescriptorPolicy {
+  input_policy:uint32;
+  output_policy:uint32;
+  param_policy:uint32;
+  read_policy:uint32;
+  write_policy:uint32;
+}
+
+
+enum VulkanApiVersion:ushort {
+  VULKAN_1_0,
+  VULKAN_1_1,
+  VULKAN_1_2,
+  VULKAN_1_3,
+  VULKAN_1_4,
+}
+
+table CoopmatShape {
+  m:uint32;
+  n:uint32;
+  k:uint32;
+  atype:ScalarType;
+  btype:ScalarType;
+  ctype:ScalarType;
+  acctype:ScalarType;
+  saturating:bool;
+}
+
+table DeviceInfo { 
+  device_name:string;
+  api_version:VulkanApiVersion;
+  // limits
+  max_compute_workgroup_count_x:uint32;
+  max_compute_workgroup_count_y:uint32;
+  max_compute_workgroup_count_z:uint32;
+  max_compute_workgroup_size_x:uint32;
+  max_compute_workgroup_size_y:uint32;
+  max_compute_workgroup_size_z:uint32;
+  max_compute_workgroup_invocations:uint32;
+  max_compute_workgroup_subgroups:uint32; // optional
+  max_compute_shared_memory:uint32;
+  max_push_constant_size:uint32;
+  // subgroup properties
+  supported_subgroup_sizes:[uint32];
+  subgroup_basic_ops:bool;
+  subgroup_vote_ops:bool;
+  subgroup_arithmetic_ops:bool;
+  subgroup_ballot_ops:bool;
+  subgroup_shuffle_ops:bool;
+  subgroup_shuffle_relative_ops:bool;
+  // memory model
+  vulkan_memory_model:bool;
+  vulkan_memory_model_device_scope:bool;
+  // coopmat
+  supported_coopmat_shapes:[CoopmatShape];
+}
+
+table CompilationFeatures {
+  coopmat:bool;
+  implicit_concat:bool;
+  conv_relu_fusion:bool;
+  concat_conv_fusion:bool;
+  upsample_conv_fusion:bool;
+  conv_pool_fusion:bool;
+}
+
+table CompilationInfo {
+  descriptor_policy:DescriptorPolicy;
+  features:CompilationFeatures;
+  device_info:DeviceInfo;
+  optimization_level:uint32;
+  denox_commit_hash:string;
+}
+
+
+table ModelInfo {
+  producer:string;
+  producer_version:string;
+  model_version:string;
+  compilation_info:CompilationInfo;
+}
+
+enum RuntimeFeature:uint {
+  CooperativeMatrix,
+}
+
+table ValueName {
+  name: string;
+  value: ScalarSource;
+}
+
+struct SHA256 {
+  hash:[uint32:8];
+}
+
+table ShaderBinary {
+  spirv:[uint32];
+  source_hash:SHA256;
+}
+
+table Model {
+  version: Version;
+  required_features:[RuntimeFeature];
+  info:ModelInfo; 
+
+  tensors:[Tensor];
+  initializers:[TensorInitializer];
+
+  inputs:[uint32];
+  outputs:[uint32];
+
+  buffers:[Buffer];
+
+  dispatches:[ComputeDispatch];
+
+  shader_binaries:[ShaderBinary];
+
+  sym_ir:SymIR;
+  value_names:[ValueName];
+}
+
+
+root_type Model;

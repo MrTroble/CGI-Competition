@@ -19,3 +19,9 @@
 [submodule "submodules/oidn"]
 	path = submodules/oidn
 	url = https://github.com/RenderKit/oidn
+[submodule "submodules/flatbuffers"]
+	path = submodules/flatbuffers
+	url = https://github.com/google/flatbuffers
+[submodule "submodules/denox"]
+	path = submodules/denox
+	url = https://github.com/kistenklaus/denox

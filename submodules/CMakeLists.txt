@@ -9,5 +9,7 @@ target_link_libraries(imgui PUBLIC glfw Vulkan::Vulkan)
 set(TINYGLTF_BUILD_LOADER_EXAMPLE OFF)
 add_subdirectory("tinygltf")
 
+add_subdirectory("flatbuffers")
+
 include_directories("stb")
 
