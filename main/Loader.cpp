@@ -512,8 +512,19 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			descImageInfo.sampler = out.sampler[albedoTex.sampler];
 			context.device.updateDescriptorSets(descWriteSet, {});
 			systemUsed = "USE_ALBEDO";
+			float ior = 1.5;
+			auto extIt = material.extensions.find("KHR_materials_ior");
+			if (extIt != material.extensions.end())
+			{
+				const tinygltf::Value& iorExt = extIt->second;
+
+				if (iorExt.Has("ior"))
+				{
+					ior = iorExt.Get("ior").Get<double>();
+				}
+			}
 			out.rtxMaterials.push_back(MaterialData{ albedoTex.source, albedoTex.sampler,
-			material.pbrMetallicRoughness.metallicRoughnessTexture.index, (float)material.pbrMetallicRoughness.roughnessFactor, (float)material.pbrMetallicRoughness.metallicFactor });
+			material.pbrMetallicRoughness.metallicRoughnessTexture.index, (float)material.pbrMetallicRoughness.roughnessFactor, (float)material.pbrMetallicRoughness.metallicFactor, ior });
 		}
 		else {
 			out.rtxMaterials.push_back(MaterialData{ -1, -1, -1, 0, 0 });

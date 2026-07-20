@@ -70,6 +70,7 @@ struct MaterialData {
 	int roughnessID;
 	float roughness;
 	float metallic;
+	float ior;
 };
 
 struct GeometryData {

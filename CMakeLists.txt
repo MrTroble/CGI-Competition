@@ -44,5 +44,5 @@ configure_file("assets/MetalRoughSpheresNoTextures.glb" "assets/MetalRoughSphere
 configure_file("assets/MetalRoughSpheres.glb" "assets/MetalRoughSpheres.glb" COPYONLY)
 configure_file("assets/IORTestGrid.glb" "assets/IORTestGrid.glb" COPYONLY)
 configure_file("assets/CompareIor.glb" "assets/CompareIor.glb" COPYONLY)
-configure_file("assets/DragonAttenuation.glb" "assets/DragonAttenuation.glb" COPYONLY)
+configure_file("assets/MosquitoInAmber.glb" "assets/MosquitoInAmber.glb" COPYONLY)
 
