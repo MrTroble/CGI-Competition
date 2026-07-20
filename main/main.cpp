@@ -860,7 +860,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
 	vk::SubmitInfo submitInfo({}, {}, cmd);
 	context.queue.submit(submitInfo);
 	context.queue.waitIdle();
-	
+
 	for (auto& model : outModels)
 	{
 		std::array spans = { std::span{model.rtxCopyData}, std::span{model.rtxIndexCopyData}, std::span{model.rtxNormalCopyData} };
@@ -1268,11 +1268,13 @@ inline void createTAA(MainContext& context) {
 
 inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& outmodels) {
 	GLTFLoader loader;
-	outmodels.resize(2 + context.lights.size());
+	outmodels.resize(3 + context.lights.size());
 	loader.load(context, "assets/provence.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f) });
 	//loader.load(context, "assets/DamagedHelmet.glb", outmodels[0], ModelConfig{ .position = glm::vec3(0.0f, 1.0f, 0.0f) });	
-    loader.load(context, "assets/MetalRoughSpheres.glb", outmodels[1], ModelConfig{ 
-		.position = glm::vec3(3.0f, 4.5f, -10.0f), .scale = glm::vec3(-0.2, 0.2, 0.2)});
+	loader.load(context, "assets/MetalRoughSpheres.glb", outmodels[1], ModelConfig{
+		.position = glm::vec3(3.0f, 4.5f, -10.0f), .scale = glm::vec3(-0.2, 0.2, 0.2) });
+	loader.load(context, "assets/IORTestGrid.glb", outmodels[2], ModelConfig{
+	  .position = glm::vec3(3.0f, 4.5f, -0.0f), .scale = glm::vec3(2, 2, 2), .rotation = glm::rotate(glm::mat4(1.0f),glm::radians(-90.0f),glm::vec3(1.0f, 0.0f, 0.0f)) });
 
 	std::cout << "Loading " << context.lights.size() << " debug cubes for lights" << std::endl;
 	for (std::size_t i = 0; i < context.lights.size(); i++) {
@@ -1280,7 +1282,7 @@ inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& out
 		loader.load(
 			context,
 			"assets/cube.glb",
-			outmodels[2 + i],
+			outmodels[3 + i],
 			ModelConfig{ .fillMode = vk::PolygonMode::eLine, .position = light.position, .scale = glm::vec3(0.3f),
 						 .shaderBindingOffset = 1 },// TODO Change shader binding for RTX
 			i
@@ -1570,7 +1572,7 @@ int main()
 	while (!glfwWindowShouldClose(context.window)) {
 		glfwPollEvents();
 
-		if(trackball_move_camera(context)) notifyViewMatrixChanged(context);
+		if (trackball_move_camera(context)) notifyViewMatrixChanged(context);
 		if (context.settings.accumulate) context.cameraNodeData.frame_Index++;
 		else context.cameraNodeData.frame_Index = 1;
 		updateMemory(context, context.cameraNode.memory, std::span{ (uint8_t*)&context.cameraNodeData, sizeof(context.cameraNodeData) });
