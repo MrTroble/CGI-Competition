@@ -512,7 +512,8 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 			descImageInfo.sampler = out.sampler[albedoTex.sampler];
 			context.device.updateDescriptorSets(descWriteSet, {});
 			systemUsed = "USE_ALBEDO";
-			float ior = 1.5;
+			float ior = 1.5f;
+			float transmission = 0.0f;
 			auto extIt = material.extensions.find("KHR_materials_ior");
 			if (extIt != material.extensions.end())
 			{
@@ -523,8 +524,20 @@ bool GLTFLoader::load(MainContext& context, const fs::path& pPath, OutputModel& 
 					ior = iorExt.Get("ior").Get<double>();
 				}
 			}
+			auto transExt = material.extensions.find("KHR_materials_transmission");
+
+			if (transExt != material.extensions.end())
+			{
+				auto& ext = transExt->second;
+
+				if (ext.Has("transmissionFactor"))
+				{
+					transmission =
+						ext.Get("transmissionFactor").Get<double>();
+				}
+			}
 			out.rtxMaterials.push_back(MaterialData{ albedoTex.source, albedoTex.sampler,
-			material.pbrMetallicRoughness.metallicRoughnessTexture.index, (float)material.pbrMetallicRoughness.roughnessFactor, (float)material.pbrMetallicRoughness.metallicFactor, ior });
+			material.pbrMetallicRoughness.metallicRoughnessTexture.index, (float)material.pbrMetallicRoughness.roughnessFactor, (float)material.pbrMetallicRoughness.metallicFactor, ior, transmission });
 		}
 		else {
 			out.rtxMaterials.push_back(MaterialData{ -1, -1, -1, 0, 0 });

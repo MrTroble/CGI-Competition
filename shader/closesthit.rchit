@@ -101,7 +101,7 @@ vec3 fresnel_mix(float ior, vec3 base, vec3 layer, float VdotH) {
   return mix(base, layer, fr);
 }
 
-vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color) {
+vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color, float ior) {
     float alpha = roughMetal.x*roughMetal.x;
     vec3 h = normalize(-gl_WorldRayDirectionEXT + wo);
 
@@ -156,12 +156,41 @@ void main()
 
 float metallic = roughMetal.y;
 float roughness = roughMetal.x;
+vec3 F0;
 
-vec3 F0 = mix(vec3(0.04),color.xyz, metallic);
-float specChance = clamp(max(max(F0.r, F0.g), F0.b), 0.05, 0.95);
+if(metallic > 0.0)
+{
+   
+    F0 = color.rgb;
+}
+else
+{
+  
+    float f0 = pow((mat.ior - 1.0) /(mat.ior + 1.0), 2.0);
+    F0 = vec3(f0) * color.rgb;
+}
 
 
-if(rngRndFloat(payload.random) < specChance)
+float cosTheta = clamp(dot(-gl_WorldRayDirectionEXT, normalCur),0.0,1.0);
+vec3 F = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+float specChance = clamp(max(max(F.r,F.g),F.b),0.05,0.95);
+bool entering = dot(gl_WorldRayDirectionEXT,normalCur) < 0.0;
+float eta;
+
+if(entering)
+{
+    eta = 1.0 / mat.ior;
+}
+else
+{
+    eta = mat.ior;
+    normalCur = -normalCur;
+}
+
+float transmissionChance = mat.transmission * (1.0 - specChance);
+float r = rngRndFloat(payload.random);
+
+if(r < specChance)
 {
     vec3 reflection = reflect( gl_WorldRayDirectionEXT, normalCur);
     if(roughness == 0){
@@ -173,8 +202,19 @@ if(rngRndFloat(payload.random) < specChance)
       reflection = normalize(mix(reflection, roughReflection, roughness));
     }
     payload.dir = reflection;
-    payload.contribution *= F0 / specChance;
-}else{
+    payload.contribution *= F / specChance;
+}else if(r < specChance + transmissionChance)
+{
+    vec3 transmissionDir = refract(gl_WorldRayDirectionEXT, normalCur,eta);
+    if(length(transmissionDir) < 0.001)
+    {
+        transmissionDir = reflect(gl_WorldRayDirectionEXT,normalCur);
+    }
+    payload.dir = transmissionDir;
+    payload.contribution *= (1.0-F.r) / transmissionChance;
+}
+
+else{
     // NEE
     uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
     LightSource lS = L.lights[indexLight];
@@ -185,9 +225,8 @@ if(rngRndFloat(payload.random) < specChance)
     traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.001f, neeDir, 10000, 1);
     if(!shadowPayload.isOccluded) {
         float pdf = dot(neeDir, normalCur) * L.numberOfLights;
-        payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz) / dot(woNee,woNee);
+        payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz, mat.ior) / dot(woNee,woNee);
     }
-    payload.contribution *= M_PI * getGGX(payload.dir, normalCur, roughMetal, color.xyz) * (1.0-metallic) / (1.0-specChance);
-
+    payload.contribution *= M_PI * getGGX(payload.dir, normalCur, roughMetal, color.xyz,mat.ior) * (1.0-specChance) * (1.0 - transmissionChance) / ((1.0-specChance-transmissionChance));
     }
 }
