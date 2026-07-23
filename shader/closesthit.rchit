@@ -127,6 +127,7 @@ vec3 sampleGGX(vec2 rand, vec3 normalCur, float roughness)
     float alpha = roughness * roughness;
     float alpha2 = alpha * alpha;
 
+
     float phi = 2.0 * M_PI * rand.x;
 
     float cosTheta = sqrt(
@@ -144,6 +145,7 @@ vec3 sampleGGX(vec2 rand, vec3 normalCur, float roughness)
 
     return normalize(frame(normalCur) * hLocal);
 }
+
 
 void main()
 {
@@ -200,15 +202,23 @@ void main()
     // Reflection
     //-----------------
     if(r < specChance){
+
+         //-----------------
+         // Perfekte Reflexion
+        //-----------------
          if(roughness < 0.001)
          {
         payload.dir = reflect(gl_WorldRayDirectionEXT, normalCur);
         payload.contribution *= F / specChance;
         return;
          }
-        
-      vec3 H = sampleGGX(rngRndVec2(payload.random), normalCur, roughness);
-      vec3 L = reflect(gl_WorldRayDirectionEXT, H);
+
+
+        //-----------------
+        //  Reflexion kaputt Hilfe!
+        //-----------------
+       vec3 H = sampleGGX(rngRndVec2(payload.random), normalCur, roughness);
+       vec3 L = reflect(gl_WorldRayDirectionEXT, H);
        L = normalize(L);
        float NoL = dot(normalCur, L);
        if(NoL <= 0.0)
@@ -226,11 +236,12 @@ void main()
        float pdf = D * NoH / (4.0 * VoH);
        float G = GeoTerm(alpha, L, -gl_WorldRayDirectionEXT, normalCur, H);
        vec3 brdf = F * D * G;
+       //vec3 brdf = getGGX( L,normalCur, roughMetal,color.xyz, mat.ior);
        vec3 weight = brdf * NoL / pdf;
 
-    payload.contribution *= weight / specChance;
-    payload.dir = L;
-    return;
+      payload.contribution *= weight / specChance;
+      payload.dir = L;
+      return;
     }
     else{
 
@@ -293,6 +304,7 @@ void main()
     }
 
     payload.dir = normalize(getDirection(rngRndVec2(payload.random),normalCur));
-    payload.contribution *= getGGX(payload.dir, normalCur, roughMetal, color.xyz,mat.ior)  / ((1.0-specChance));
+    float NoL = max(dot(normalCur, payload.dir),0.0);
+    payload.contribution *= getGGX(payload.dir, normalCur, roughMetal, color.xyz,mat.ior) / ((1.0-specChance) * 2 * M_PI);
     }
 }
