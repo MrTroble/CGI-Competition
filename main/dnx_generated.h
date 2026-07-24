@@ -315,8 +315,8 @@ enum SymIROpCode : uint16_t {
   SymIROpCode_MAX = 7,
   SymIROpCode_RHSC = 16384,
   SymIROpCode_LHSC = 32768,
-  SymIROpCode_MIN = SymIROpCode_NOP,
-  SymIROpCode_MAX = SymIROpCode_LHSC
+  SymIROpCode_MINV = SymIROpCode_NOP,
+  SymIROpCode_MAXV = SymIROpCode_LHSC
 };
 
 inline const SymIROpCode (&EnumValuesSymIROpCode())[10] {

@@ -4,6 +4,7 @@
 #include <imgui.h>
 #include <backends/imgui_impl_glfw.h>
 #include <backends/imgui_impl_vulkan.h>
+#include "dnx_generated.h"
 
 #include "MainContext.hpp"
 #include "Loader.hpp"
@@ -14,6 +15,35 @@
 #include "trackball.hpp"
 #include "rng.hpp"
 #include "Shared.hpp"
+
+struct UNetLoader {
+	std::vector<vk::DeviceMemory> memories;
+};
+
+template<class T>
+inline T resolveDNXScalar(const denox::dnx::ScalarLiteral* literal) {
+	// TODO Check correct
+	return *((const T*)(literal->bytes()->data()));
+}
+
+inline UNetLoader loadUNet(MainContext& context) {
+	using namespace denox::dnx;
+	UNetLoader loader;
+
+	const std::string path = (fs::path("..") / "assets" / "net.dnx").string();
+	const auto modelFile = loadFile(path);
+	const auto model = GetModel(modelFile.data());
+	assert(model);
+	const auto& buffers = *model->buffers();
+	for (const auto buffer : buffers) {
+		//model->sym_ir()->ops()->operator[](10).;
+		const auto literalSize = buffer->size_as_literal();
+		assert(literalSize != nullptr);
+		vk::MemoryAllocateInfo allocateInfo{ resolveDNXScalar<vk::DeviceSize>(literalSize), context.hostVisibleDeviceLocalMemory};
+		loader.memories.push_back(context.device.allocateMemory(allocateInfo));
+	}
+	return loader;
+}
 
 inline void notifyViewMatrixChanged(MainContext& context, bool applyJitter = true) {
 	const float aspect = (float)context.currentExtent.width / context.currentExtent.height;
@@ -1266,6 +1296,7 @@ inline void createTAA(MainContext& context) {
 	}
 }
 
+
 inline GLTFLoader loadModels(MainContext& context, std::vector<OutputModel>& outmodels) {
 	GLTFLoader loader;
 	outmodels.resize(2 + context.lights.size());
@@ -1541,6 +1572,7 @@ int main()
 	createSwapchain(context);
 	createCommandBuffer(context);
 	createDescriptorSetLayout(context);
+	loadUNet(context);
 
 	context.cameraNodeData.windowParameter.x = (float)context.currentExtent.width;
 	context.cameraNodeData.windowParameter.y = (float)context.currentExtent.height;

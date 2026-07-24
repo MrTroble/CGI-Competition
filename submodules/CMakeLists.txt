@@ -11,5 +11,5 @@ add_subdirectory("tinygltf")
 
 add_subdirectory("flatbuffers")
 
-include_directories("stb")
+include_directories("stb" "flatbuffers/include")
 
