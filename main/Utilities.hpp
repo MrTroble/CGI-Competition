@@ -10,8 +10,8 @@ inline void updateMemory(MainContext& context, vk::DeviceMemory memory, std::spa
     context.device.unmapMemory(memory);
 }
 
-template<class T>
-inline T alignUp(T value, T alignment)
+template<class T, class U>
+inline T alignUp(T value, U alignment)
 {
     return (value + alignment - 1) &
         ~(alignment - 1);
