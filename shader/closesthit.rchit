@@ -56,6 +56,8 @@ layout(binding=7, set = 2) readonly buffer NormalBlock
 
 #define M_PI 3.1415926535897932384626433832795
 
+
+
 mat3 frame(const vec3 n) {
     const vec3 nz = normalize(n);
     float sign1 = sign(nz.z);
@@ -101,7 +103,7 @@ vec3 fresnel_mix(float ior, vec3 base, vec3 layer, float VdotH) {
   return mix(base, layer, fr);
 }
 
-vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color) {
+vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color, float ior) {
     float alpha = roughMetal.x*roughMetal.x;
     vec3 h = normalize(-gl_WorldRayDirectionEXT + wo);
 
@@ -119,6 +121,31 @@ vec3 getGGX(vec3 wo, vec3 normalCur, vec2 roughMetal, vec3 color) {
     vec3 metallic = conductor_fresnel(color, vec3(ggxG * ggxD), vDotH);
     return mix(dialectric, metallic, roughMetal.y);
 }
+
+vec3 sampleGGX(vec2 rand, vec3 normalCur, float roughness)
+{
+    float alpha = roughness * roughness;
+    float alpha2 = alpha * alpha;
+
+
+    float phi = 2.0 * M_PI * rand.x;
+
+    float cosTheta = sqrt(
+        (1.0 - rand.y) /
+        (1.0 + (alpha2 - 1.0) * rand.y)
+    );
+
+    float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
+
+    vec3 hLocal = vec3(
+        cos(phi) * sinTheta,
+        sin(phi) * sinTheta,
+        cosTheta
+    );
+
+    return normalize(frame(normalCur) * hLocal);
+}
+
 
 void main()
 {
@@ -154,40 +181,130 @@ void main()
     payload.dir = normalize(getDirection(rngRndVec2(payload.random), normalCur));
 
 
-float metallic = roughMetal.y;
-float roughness = roughMetal.x;
-
-vec3 F0 = mix(vec3(0.04),color.xyz, metallic);
-float specChance = clamp(max(max(F0.r, F0.g), F0.b), 0.05, 0.95);
-
-
-if(rngRndFloat(payload.random) < specChance)
-{
-    vec3 reflection = reflect( gl_WorldRayDirectionEXT, normalCur);
-    if(roughness == 0){
-      payload.dir = reflection;
-    }
-   else if(roughness > 0.001)
+    float metallic = roughMetal.y;
+    float roughness = roughMetal.x;
+    vec3 F0;
+    if(metallic > 0.0)
     {
-      vec3 roughReflection = getDirection( rngRndVec2(payload.random), reflection);
-      reflection = normalize(mix(reflection, roughReflection, roughness));
+       F0 = color.rgb;
     }
-    payload.dir = reflection;
-    payload.contribution *= F0 / specChance;
-}else{
-    // NEE
-    uint indexLight = clamp(0, L.numberOfLights - 1, uint(L.numberOfLights * rngRndFloat(payload.random)));
+    else
+    {
+        float f0 = pow((mat.ior - 1.0) /(mat.ior + 1.0), 2.0);
+        F0 = vec3(f0) * color.rgb;
+    }
+    float cosTheta = clamp(dot(-gl_WorldRayDirectionEXT, normalCur),0.0,1.0);
+    vec3 F = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
+    float specChance = clamp(max(max(F.r,F.g),F.b),0.05,0.95);
+    float r = rngRndFloat(payload.random);
+
+    //-----------------
+    // Reflection
+    //-----------------
+    if(r < specChance){
+
+         //-----------------
+         // Perfekte Reflexion
+        //-----------------
+         if(roughness < 0.001)
+         {
+        payload.dir = reflect(gl_WorldRayDirectionEXT, normalCur);
+        payload.contribution *= F / specChance;
+        return;
+         }
+
+
+        //-----------------
+        //  Reflexion kaputt Hilfe!
+        //-----------------
+       vec3 H = sampleGGX(rngRndVec2(payload.random), normalCur, roughness);
+       vec3 L = reflect(gl_WorldRayDirectionEXT, H);
+       L = normalize(L);
+       float NoL = dot(normalCur, L);
+       if(NoL <= 0.0)
+        {
+         payload.contribution = vec3(0.0);
+         return;
+        }
+       float NoV = max(dot(normalCur, -gl_WorldRayDirectionEXT), 0.0001);
+       float NoH = max(dot(normalCur, H), 0.0001);
+       float VoH = max(dot(-gl_WorldRayDirectionEXT, H), 0.0001);
+       float alpha = roughness * roughness;
+       float alpha2 = alpha * alpha;
+       float denom = NoH * NoH * (alpha2 - 1.0) + 1.0;
+       float D = alpha2 / (M_PI * denom * denom);
+       float pdf = D * NoH / (4.0 * VoH);
+       float G = GeoTerm(alpha, L, -gl_WorldRayDirectionEXT, normalCur, H);
+       vec3 brdf = F * D * G;
+       //vec3 brdf = getGGX( L,normalCur, roughMetal,color.xyz, mat.ior);
+       vec3 weight = brdf * NoL / pdf;
+
+      payload.contribution *= weight / specChance;
+      payload.dir = L;
+      return;
+    }
+    else{
+
+//-----------------
+// Transmission
+//-----------------
+    if(mat.transmission > 0.0)
+    {
+        vec3 N = normalCur;
+        float eta;
+        if(dot(gl_WorldRayDirectionEXT,N) < 0)
+        {
+            eta = 1.0 / max(mat.ior,1.01);
+        }
+        else
+        {
+            N=-N;
+            eta = max(mat.ior,1.01);
+        }
+        vec3 transmission = refract( gl_WorldRayDirectionEXT,N,eta);
+        payload.dir = normalize(transmission);
+        payload.contribution *= color.rgb / ((1.0-specChance));
+        return;
+    }
+//-----------------
+// NEE
+//-----------------
+    uint indexLight = min(uint(rngRndFloat(payload.random)*float(L.numberOfLights)), L.numberOfLights-1);
     LightSource lS = L.lights[indexLight];
+    vec3 toLight = lS.position - payload.pos;
+    float dist = length(toLight);
+    vec3 lightDir = toLight/dist;
 
-    vec3 woNee = lS.position - payload.pos;
     shadowPayload.isOccluded = true;
-    vec3 neeDir = normalize(woNee);
-    traceRayEXT(topLevelAS, gl_RayFlagsOpaqueEXT, 0xff, SHADOW_RAY_OFFSET, 0, 0, payload.pos, 0.001f, neeDir, 10000, 1);
-    if(!shadowPayload.isOccluded) {
-        float pdf = dot(neeDir, normalCur) * L.numberOfLights;
-        payload.spectrum += lS.color * payload.contribution * lS.brightness * pdf * getGGX(neeDir, normalCur, roughMetal, color.xyz) / dot(woNee,woNee);
-    }
-    payload.contribution *= M_PI * getGGX(payload.dir, normalCur, roughMetal, color.xyz) * (1.0-metallic) / (1.0-specChance);
+    traceRayEXT(
+         topLevelAS,
+         gl_RayFlagsOpaqueEXT,
+         0xff,
+         SHADOW_RAY_OFFSET,
+         0,
+          0,
+          payload.pos,
+          0.001,
+          lightDir,
+          dist-0.001,
+          1
+        );
 
+    if(!shadowPayload.isOccluded)
+    {
+    float NdotL = max(dot(normalCur,lightDir),0.0);
+
+    payload.spectrum += payload.contribution *
+        getGGX(lightDir, normalCur, roughMetal, color.xyz, mat.ior) *
+        lS.color *
+        lS.brightness *
+        NdotL *
+        float(L.numberOfLights) /
+        (dist*dist);
+    }
+
+    payload.dir = normalize(getDirection(rngRndVec2(payload.random),normalCur));
+    float NoL = max(dot(normalCur, payload.dir),0.0);
+    payload.contribution *= getGGX(payload.dir, normalCur, roughMetal, color.xyz,mat.ior) / ((1.0-specChance) * 2 * M_PI);
     }
 }

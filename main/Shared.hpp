@@ -70,6 +70,9 @@ struct MaterialData {
 	int roughnessID;
 	float roughness;
 	float metallic;
+	float ior;
+	float transmission;
+	float pad1;
 };
 
 struct GeometryData {

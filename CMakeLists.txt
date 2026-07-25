@@ -42,4 +42,8 @@ configure_file("assets/cube.glb" "assets/cube.glb" COPYONLY)
 configure_file("assets/DamagedHelmet.glb" "assets/DamagedHelmet.glb" COPYONLY)
 configure_file("assets/MetalRoughSpheresNoTextures.glb" "assets/MetalRoughSpheresNoTextures.glb" COPYONLY)
 configure_file("assets/MetalRoughSpheres.glb" "assets/MetalRoughSpheres.glb" COPYONLY)
+configure_file("assets/IORTestGrid.glb" "assets/IORTestGrid.glb" COPYONLY)
+configure_file("assets/CompareIor.glb" "assets/CompareIor.glb" COPYONLY)
+configure_file("assets/MosquitoInAmber.glb" "assets/MosquitoInAmber.glb" COPYONLY)
+
 configure_file("assets/net.dnx" "assets/net.dnx" COPYONLY)
