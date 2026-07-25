@@ -26,6 +26,37 @@ inline T resolveDNXScalar(const denox::dnx::ScalarLiteral* literal) {
 	return *((const T*)(literal->bytes()->data()));
 }
 
+template<class T>
+inline T resolveSymIR(const std::vector<int64_t>& data, const denox::dnx::SymRef* symRef) {
+	return (T)data[symRef->sid()];
+}
+
+inline int64_t evaluate(denox::dnx::SymIROpCode opCode, int64_t left, int64_t right) {
+	switch (opCode)
+	{
+	case denox::dnx::SymIROpCode_NOP:
+		return 0; // TODO Check
+	case denox::dnx::SymIROpCode_ADD:
+		return left + right;
+	case denox::dnx::SymIROpCode_SUB:
+		return left - right;
+	case denox::dnx::SymIROpCode_MUL:
+		return left * right;
+	case denox::dnx::SymIROpCode_DIV:
+		return left / right;
+	case denox::dnx::SymIROpCode_MOD:
+		return left - right * floor(left / right);
+	case denox::dnx::SymIROpCode_MIN:
+		return std::min(left, right);
+	case denox::dnx::SymIROpCode_MAX:
+		return std::max(left, right);
+	case denox::dnx::SymIROpCode_RHSC:
+	case denox::dnx::SymIROpCode_LHSC:
+	default:
+		throw std::runtime_error("Operation not supported!");
+	}
+}
+
 inline UNetLoader loadUNet(MainContext& context) {
 	using namespace denox::dnx;
 	UNetLoader loader;
@@ -34,12 +65,52 @@ inline UNetLoader loadUNet(MainContext& context) {
 	const auto modelFile = loadFile(path);
 	const auto model = GetModel(modelFile.data());
 	assert(model);
+
+	const auto& sym_ir = *model->sym_ir();
+	const auto& ops = *sym_ir.ops();
+	const std::array variables = {(int)context.currentExtent.height, (int)context.currentExtent.width };
+	
+	std::vector<int64_t> values(
+		sym_ir.var_count() + ops.size());
+	assert(sym_ir.var_count() == variables.size());
+
+	for (size_t i = 0; i < sym_ir.var_count(); ++i) {
+		values[i] = variables[i];
+	}
+
+	for (size_t i = 0; i < ops.size(); ++i) {
+		const SymIROp op = *ops[i];
+
+		const SymIROpCode base =
+			(SymIROpCode)(op.opcode() & ~(SymIROpCode_LHSC | SymIROpCode_RHSC));
+
+		const bool lhs_is_constant =
+			(op.opcode() & SymIROpCode_LHSC) != 0;
+
+		const bool rhs_is_constant =
+			(op.opcode() & SymIROpCode_RHSC) != 0;
+
+		const int64_t lhs =
+			lhs_is_constant
+			? op.lhs()
+			: values[static_cast<size_t>(op.lhs())];
+
+		const int64_t rhs =
+			rhs_is_constant
+			? op.rhs()
+			: values[static_cast<size_t>(op.rhs())];
+
+		values[sym_ir.var_count() + i] =
+			evaluate(base, lhs, rhs);
+	}
 	const auto& buffers = *model->buffers();
+
 	for (const auto buffer : buffers) {
 		//model->sym_ir()->ops()->operator[](10).;
 		const auto literalSize = buffer->size_as_literal();
-		assert(literalSize != nullptr);
-		vk::MemoryAllocateInfo allocateInfo{ resolveDNXScalar<vk::DeviceSize>(literalSize), context.hostVisibleDeviceLocalMemory};
+		const auto size = literalSize == nullptr ? resolveSymIR<vk::DeviceSize>(values, buffer->size_as_symbolic()) :
+												   resolveDNXScalar<vk::DeviceSize>(literalSize);
+		vk::MemoryAllocateInfo allocateInfo{ size, context.hostVisibleDeviceLocalMemory};
 		loader.memories.push_back(context.device.allocateMemory(allocateInfo));
 	}
 	return loader;
