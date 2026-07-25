@@ -19,6 +19,7 @@
 struct UNetLoader {
     std::vector<vk::DeviceMemory> memories;
     std::vector<vk::Buffer> buffer;
+    std::vector<vk::ShaderModule> shader;
 };
 
 template<class T>
@@ -87,6 +88,41 @@ inline int64_t evaluate(denox::dnx::SymIROpCode opCode, int64_t left, int64_t ri
 const auto c##func = literal##func == nullptr ? resolveSymIR<type>(values, obj->##func##_as_symbolic()) :\
     resolveDNXScalar<type>(literal##func);
 
+inline std::vector<const char*> enableUNetReqs(MainContext& context, void** pNext) {
+    using namespace denox::dnx;
+
+    const std::string path = (fs::path("..") / "assets" / "net.dnx").string();
+    const auto modelFile = loadFile(path);
+    const auto model = GetModel(modelFile.data());
+
+    const auto& mInfo = *model->info();
+    const auto& compInfo = *mInfo.compilation_info();
+    
+    const auto& featComp = *compInfo.features();
+    
+    static vk::PhysicalDeviceCooperativeMatrixFeaturesKHR coopMat;
+    coopMat.cooperativeMatrix = true;
+    static vk::PhysicalDeviceVulkan11Features f11;
+    f11.storageBuffer16BitAccess = true;
+    f11.storageInputOutput16 = true;
+    static vk::PhysicalDeviceVulkan12Features f12;
+    f12.shaderFloat16 = true;
+    f12.bufferDeviceAddress = true;
+    f12.bufferDeviceAddressCaptureReplay = true;
+    f12.vulkanMemoryModel = true;
+    f12.setShaderSampledImageArrayNonUniformIndexing(true);
+    f11.pNext = &f12;
+    *pNext = &f11;
+    pNext = &f12.pNext;
+
+    std::vector<const char*> exts;
+    if (featComp.coopmat()) {
+        *pNext = &coopMat;
+        pNext = &coopMat.pNext;
+        exts.push_back(VK_KHR_COOPERATIVE_MATRIX_EXTENSION_NAME);
+    }
+    return exts;
+}
 
 inline UNetLoader loadUNet(MainContext& context) {
     using namespace denox::dnx;
@@ -164,6 +200,14 @@ inline UNetLoader loadUNet(MainContext& context) {
         assert(vec.size() >= csize);
         memcpy(dest, vec.data(), csize);
         context.device.unmapMemory(mem);
+    }
+
+    const auto& binaries = *model->shader_binaries();
+    for (const auto bin : binaries) {
+        const auto& spir = bin->spirv();
+        vk::ShaderModuleCreateInfo shaderModCreate({}, spir->size() * sizeof(uint32_t), spir->data());
+        const auto shaderMod = context.device.createShaderModule(shaderModCreate);
+        loader.shader.push_back(shaderMod);
     }
     return loader;
 }
@@ -1647,24 +1691,24 @@ int main()
     vk::PhysicalDeviceDynamicRenderingFeatures dynamicFeature(true);
     vk::PhysicalDeviceFeatures2 physicalDeviceFeatures;
     physicalDeviceFeatures.features.fillModeNonSolid = true;
-    vk::PhysicalDeviceDescriptorIndexingFeaturesEXT indexingFeature;
-    indexingFeature.setShaderSampledImageArrayNonUniformIndexing(true);
-    vk::PhysicalDeviceBufferDeviceAddressFeatures addressFeature;
-    addressFeature.bufferDeviceAddress = true;
-    addressFeature.bufferDeviceAddressCaptureReplay = true;
+    physicalDeviceFeatures.features.shaderFloat64 = true;
+    physicalDeviceFeatures.features.shaderInt16 = true;
+    physicalDeviceFeatures.features.shaderInt64 = true;
+
     vk::PhysicalDeviceRayTracingPipelineFeaturesKHR rayTracingPipelineFeatures{};
     rayTracingPipelineFeatures.rayTracingPipeline = true;
     vk::PhysicalDeviceAccelerationStructureFeaturesKHR accelFeaturesInfo;
     accelFeaturesInfo.accelerationStructure = true;
     accelFeaturesInfo.accelerationStructureCaptureReplay = true;
     accelFeaturesInfo.descriptorBindingAccelerationStructureUpdateAfterBind = true;
-    dynamicFeature.pNext = &accelFeaturesInfo;
     physicalDeviceFeatures.pNext = &dynamicFeature;
-    accelFeaturesInfo.pNext = &addressFeature;
-    addressFeature.pNext = &rayTracingPipelineFeatures;
-    rayTracingPipelineFeatures.pNext = &indexingFeature;
+    dynamicFeature.pNext = &accelFeaturesInfo;
+    accelFeaturesInfo.pNext = &rayTracingPipelineFeatures;
+    const auto exts = enableUNetReqs(context, &rayTracingPipelineFeatures.pNext);
+    for(const auto e : exts) deviceExtensions.push_back(e);
     vk::DeviceCreateInfo deviceCreateInfo({}, deviceQueueCreateInfo, {}, deviceExtensions);
     deviceCreateInfo.pNext = &physicalDeviceFeatures;
+
     context.device = context.usedPhyDevice.createDevice(deviceCreateInfo);
     std::cout << "Device created" << std::endl;
 
