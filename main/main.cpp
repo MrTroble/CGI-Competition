@@ -21,47 +21,82 @@ struct UNetLoader {
     std::vector<vk::Buffer> buffer;
     std::vector<vk::ShaderModule> shader;
     vk::DescriptorPool pool;
+    vk::CommandPool cmdPool;
+    vk::CommandBuffer cmd;
 
     std::vector<vk::Pipeline> pipelines;
     std::vector<vk::PipelineLayout> layouts;
     std::vector<std::vector<vk::DescriptorSetLayout>> descLayouts;
     std::vector<std::vector<vk::DescriptorSet>> descSets;
+
+    std::vector<std::vector<uint8_t>> pushData;
 };
 
-template<class T>
-inline T resolveDNXScalar(const denox::dnx::ScalarLiteral* literal) {
+inline size_t byteSizeOf(const denox::dnx::ScalarType type) {
+    using namespace denox::dnx;
+    switch (type)
+    {
+    case ScalarType_I16:
+    case ScalarType_F16:
+    case ScalarType_U16:
+        return sizeof(uint16_t);
+    case ScalarType_I32:
+    case ScalarType_F32:
+    case ScalarType_U32:
+        return sizeof(uint32_t);
+    case ScalarType_I64:
+    case ScalarType_F64:
+    case ScalarType_U64:
+        return sizeof(uint64_t);
+    default:
+        break;
+    }
+    throw std::runtime_error("Type not supported!");
+}
+
+union PossibleType {
+    double d;
+    float f;
+    uint32_t u32;
+    uint16_t u16;
+    uint64_t u64;
+    int32_t i32;
+    int16_t i16;
+    int64_t i64;
+};
+
+inline PossibleType resolveDNXScalar(const denox::dnx::ScalarLiteral* literal) {
     // TODO Check correct
     using namespace denox::dnx;
     const ScalarType type = literal->dtype();
     switch (type)
     {
     case ScalarType_I16:
-        return (T) * ((const int16_t*)(literal->bytes()->data()));
+        return { .i16 = *((const int16_t*)(literal->bytes()->data())) };
     case ScalarType_F16:
-        return (T) * ((const uint16_t*)(literal->bytes()->data()));
+        return { .f = * ((const float*)(literal->bytes()->data())) };
     case ScalarType_U16:
-        return (T) * ((const uint16_t*)(literal->bytes()->data()));
+        return { .u16 = *((const uint16_t*)(literal->bytes()->data())) };
     case ScalarType_I32:
-        return (T) * ((const int32_t*)(literal->bytes()->data()));
+        return { .i32 = *((const int32_t*)(literal->bytes()->data())) };
     case ScalarType_F32:
-        return (T) * ((const float*)(literal->bytes()->data()));
+        return { .f = *((const float*)(literal->bytes()->data())) };
     case ScalarType_U32:
-        return (T) * ((const uint32_t*)(literal->bytes()->data()));
+        return { .u32 = *((const uint32_t*)(literal->bytes()->data())) };
     case ScalarType_I64:
-        return (T) * ((const int64_t*)(literal->bytes()->data()));
+        return { .i64 = *((const int64_t*)(literal->bytes()->data())) };
     case ScalarType_F64:
-        return (T) * ((const double*)(literal->bytes()->data()));
+        return { .d = *((const double*)(literal->bytes()->data())) };
     case ScalarType_U64:
-        return (T) * ((const uint64_t*)(literal->bytes()->data()));
+        return { .u64 = *((const uint64_t*)(literal->bytes()->data())) };
     default:
         break;
     }
-    return *((const T*)(literal->bytes()->data()));
+    throw std::runtime_error("Type not supported!");
 }
 
-template<class T>
-inline T resolveSymIR(const std::vector<int64_t>& data, const denox::dnx::SymRef* symRef) {
-    return (T)data[symRef->sid()];
+inline PossibleType resolveSymIR(const std::vector<int64_t>& data, const denox::dnx::SymRef* symRef) {
+    return { .i64 = data[symRef->sid()] };
 }
 
 inline int64_t evaluate(denox::dnx::SymIROpCode opCode, int64_t left, int64_t right) {
@@ -90,9 +125,9 @@ inline int64_t evaluate(denox::dnx::SymIROpCode opCode, int64_t left, int64_t ri
     }
 }
 
-#define RESOLVE_LOCAL(obj, func, type) const auto literal##func = obj->##func##_as_literal();\
-const auto c##func = literal##func == nullptr ? resolveSymIR<type>(values, obj->##func##_as_symbolic()) :\
-    resolveDNXScalar<type>(literal##func);
+#define RESOLVE_LOCAL(obj, func) const auto literal##func = obj->##func##_as_literal();\
+const auto c##func = literal##func == nullptr ? resolveSymIR(values, obj->##func##_as_symbolic()) :\
+    resolveDNXScalar(literal##func);
 
 inline std::vector<const char*> enableUNetReqs(MainContext& context, void** pNext) {
     using namespace denox::dnx;
@@ -183,8 +218,8 @@ inline UNetLoader loadUNet(MainContext& context) {
     const auto& buffers = *model->buffers();
 
     for (const auto buffer : buffers) {
-        RESOLVE_LOCAL(buffer, size, vk::DeviceSize);
-        const auto size = alignUp(csize, buffer->alignment());
+        RESOLVE_LOCAL(buffer, size);
+        const auto size = alignUp(csize.u64, buffer->alignment());
 
         vk::BufferCreateInfo bufferCreate{ {}, size, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eStorageTexelBuffer };
         const auto currentBuffer = context.device.createBuffer(bufferCreate);
@@ -205,10 +240,10 @@ inline UNetLoader loadUNet(MainContext& context) {
         const auto mem = loader.memories[tensor->buffer()];
         RESOLVE_LOCAL(tensor, offset, vk::DeviceSize);
         RESOLVE_LOCAL(tensor, size, vk::DeviceSize);
-        void* dest = context.device.mapMemory(mem, coffset, csize);
+        void* dest = context.device.mapMemory(mem, coffset.u64, csize.u64);
         const auto& vec = *init->data();
-        assert(vec.size() >= csize);
-        memcpy(dest, vec.data(), csize);
+        assert(vec.size() >= csize.u64);
+        memcpy(dest, vec.data(), csize.u64);
         context.device.unmapMemory(mem);
     }
 
@@ -222,6 +257,11 @@ inline UNetLoader loadUNet(MainContext& context) {
 
     vk::DescriptorPoolSize descSize(vk::DescriptorType::eStorageBuffer, 100);
     loader.pool = context.device.createDescriptorPool(vk::DescriptorPoolCreateInfo({}, 100, descSize));
+
+    loader.cmdPool = context.device.createCommandPool(vk::CommandPoolCreateInfo({}, context.queueIndex));
+    loader.cmd = context.device.allocateCommandBuffers(vk::CommandBufferAllocateInfo(loader.cmdPool, vk::CommandBufferLevel::eSecondary, 1)).back();
+    vk::CommandBufferBeginInfo beginInfo({});
+    loader.cmd.begin(beginInfo);
 
     const auto& dispatches = *model->dispatches();
     vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo groupSize(32u);
@@ -244,6 +284,8 @@ inline UNetLoader loadUNet(MainContext& context) {
         }
         loader.descLayouts.push_back(layoutsCreated);
         const auto& pConst = *disp->push_constant();
+        for (const auto f : *pConst.fields()) {
+        }
         vk::PushConstantRange range(vk::ShaderStageFlagBits::eCompute, 0, pConst.size());
         vk::PipelineLayoutCreateInfo pipeLayouteCreateInfo({}, layoutsCreated, range);
         const auto layout = context.device.createPipelineLayout(pipeLayouteCreateInfo);
@@ -251,10 +293,11 @@ inline UNetLoader loadUNet(MainContext& context) {
         vk::ComputePipelineCreateInfo computePipeCreate({}, shaderStageCreateInfo, layout);
         const auto pipe = context.device.createComputePipeline({}, computePipeCreate);
         loader.pipelines.push_back(pipe.value);
+        loader.cmd.bindPipeline(vk::PipelineBindPoint::eCompute, pipe.value);
 
         const auto descSet = context.device.allocateDescriptorSets(vk::DescriptorSetAllocateInfo(loader.pool, layoutsCreated));
         loader.descSets.push_back(descSet);
-        
+
         size_t counter = 0;
         for (const auto bind : bindings) {
             std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
@@ -266,15 +309,28 @@ inline UNetLoader loadUNet(MainContext& context) {
                 RESOLVE_LOCAL(tensor, offset, vk::DeviceSize);
                 RESOLVE_LOCAL(tensor, size, vk::DeviceSize);
                 bufferInfo.buffer = loader.buffer[tensor->buffer()];
-                bufferInfo.offset = coffset;
-                bufferInfo.range = csize;
+                bufferInfo.offset = coffset.u64;
+                bufferInfo.range = csize.u64;
                 context.device.updateDescriptorSets(descSetWrite, {});
             }
             vk::DescriptorSetLayoutCreateInfo descrip({}, layoutBindings);
             layoutsCreated.push_back(context.device.createDescriptorSetLayout(descrip));
             counter++;
         }
+        loader.cmd.bindDescriptorSets(vk::PipelineBindPoint::eCompute, layout, 0, descSet, {});
+
+        std::vector<uint8_t> pushValues(range.size);
+        for (const auto f : *pConst.fields()) {
+            RESOLVE_LOCAL(f, source, vk::DeviceSize);
+            const auto sizeOfPush = f->source_type() == ScalarSource_literal ?
+                byteSizeOf(f->source_as_literal()->dtype()) : sizeof(int64_t);
+            const auto offset = f->offset();
+            memcpy(pushValues.data() + offset, &csource, sizeOfPush);
+        }
+        loader.cmd.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, pushValues.size(), pushValues.data());
+        loader.pushData.emplace_back(std::move(pushValues));
     }
+    loader.cmd.end();
     return loader;
 }
 
