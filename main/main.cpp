@@ -74,7 +74,7 @@ inline PossibleType resolveDNXScalar(const denox::dnx::ScalarLiteral* literal) {
     case ScalarType_I16:
         return { .i16 = *((const int16_t*)(literal->bytes()->data())) };
     case ScalarType_F16:
-        return { .f = * ((const float*)(literal->bytes()->data())) };
+        return { .f = *((const float*)(literal->bytes()->data())) };
     case ScalarType_U16:
         return { .u16 = *((const uint16_t*)(literal->bytes()->data())) };
     case ScalarType_I32:
@@ -153,11 +153,13 @@ inline std::vector<const char*> enableUNetReqs(MainContext& context, void** pNex
     f12.vulkanMemoryModel = true;
     f12.setShaderSampledImageArrayNonUniformIndexing(true);
     f11.pNext = &f12;
-    static vk::PhysicalDeviceSubgroupSizeControlFeatures subgroupFeat;
-    f12.pNext = &subgroupFeat;
-    subgroupFeat.subgroupSizeControl = true;
+    static vk::PhysicalDeviceVulkan13Features f13;
+    f13.synchronization2 = true;
+    f13.dynamicRendering = true;
+    f13.subgroupSizeControl = true;
+    f12.pNext = &f13;
     *pNext = &f11;
-    pNext = &subgroupFeat.pNext;
+    pNext = &f13.pNext;
 
     std::vector<const char*> exts;
     exts.push_back(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
@@ -221,7 +223,8 @@ inline UNetLoader loadUNet(MainContext& context) {
         RESOLVE_LOCAL(buffer, size);
         const auto size = alignUp(csize.u64, buffer->alignment());
 
-        vk::BufferCreateInfo bufferCreate{ {}, size, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eStorageTexelBuffer };
+        vk::BufferCreateInfo bufferCreate{ {}, size, vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eStorageTexelBuffer
+                                                    | vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc };
         const auto currentBuffer = context.device.createBuffer(bufferCreate);
         loader.buffer.push_back(currentBuffer);
 
@@ -238,8 +241,8 @@ inline UNetLoader loadUNet(MainContext& context) {
     for (const auto init : tensorInits) {
         const auto tensor = tensors[init->tensor()];
         const auto mem = loader.memories[tensor->buffer()];
-        RESOLVE_LOCAL(tensor, offset, vk::DeviceSize);
-        RESOLVE_LOCAL(tensor, size, vk::DeviceSize);
+        RESOLVE_LOCAL(tensor, offset);
+        RESOLVE_LOCAL(tensor, size);
         void* dest = context.device.mapMemory(mem, coffset.u64, csize.u64);
         const auto& vec = *init->data();
         assert(vec.size() >= csize.u64);
@@ -260,8 +263,36 @@ inline UNetLoader loadUNet(MainContext& context) {
 
     loader.cmdPool = context.device.createCommandPool(vk::CommandPoolCreateInfo({}, context.queueIndex));
     loader.cmd = context.device.allocateCommandBuffers(vk::CommandBufferAllocateInfo(loader.cmdPool, vk::CommandBufferLevel::eSecondary, 1)).back();
-    vk::CommandBufferBeginInfo beginInfo({});
+    vk::CommandBufferInheritanceInfo inheritance;
+    vk::CommandBufferBeginInfo beginInfo({}, &inheritance);
     loader.cmd.begin(beginInfo);
+
+    const auto& inputs = *model->inputs();
+
+    const auto inTensor = tensors[inputs[0]];
+    const auto inOut = context.resolve1Image;
+
+    vk::BufferMemoryBarrier2 bufferMemBarrier(vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+        vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite);
+
+    vk::BufferImageCopy bufferImageCopy;
+    {
+        const auto inputBuffer = loader.buffer[inTensor->buffer()];
+        vk::DependencyInfo depsInfo({}, {}, bufferMemBarrier);
+        RESOLVE_LOCAL(inTensor, offset);
+        bufferImageCopy.bufferOffset = coffset.u64;
+        bufferImageCopy.bufferRowLength = context.currentExtent.width;
+        bufferImageCopy.bufferImageHeight = context.currentExtent.height;
+        bufferImageCopy.imageExtent = vk::Extent3D{ context.currentExtent, 1u};
+        bufferImageCopy.imageSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor,0,0,1);
+        loader.cmd.copyImageToBuffer(inOut, vk::ImageLayout::eGeneral, inputBuffer, bufferImageCopy);
+        bufferMemBarrier.buffer = inputBuffer; 
+        bufferMemBarrier.size = VK_WHOLE_SIZE;
+        bufferMemBarrier.offset = coffset.u64;
+        loader.cmd.pipelineBarrier2(depsInfo);
+    }
 
     const auto& dispatches = *model->dispatches();
     vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo groupSize(32u);
@@ -298,6 +329,7 @@ inline UNetLoader loadUNet(MainContext& context) {
         const auto descSet = context.device.allocateDescriptorSets(vk::DescriptorSetAllocateInfo(loader.pool, layoutsCreated));
         loader.descSets.push_back(descSet);
 
+        std::vector<vk::BufferMemoryBarrier2> bufferMem;
         size_t counter = 0;
         for (const auto bind : bindings) {
             std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
@@ -306,11 +338,17 @@ inline UNetLoader loadUNet(MainContext& context) {
             vk::WriteDescriptorSet descSetWrite(descSet[counter], 0, 0, vk::DescriptorType::eStorageBuffer, {}, bufferInfo);
             for (const auto lB : localBind) {
                 const auto tensor = tensors[lB->tensor()];
-                RESOLVE_LOCAL(tensor, offset, vk::DeviceSize);
-                RESOLVE_LOCAL(tensor, size, vk::DeviceSize);
+                RESOLVE_LOCAL(tensor, offset);
+                RESOLVE_LOCAL(tensor, size);
                 bufferInfo.buffer = loader.buffer[tensor->buffer()];
                 bufferInfo.offset = coffset.u64;
                 bufferInfo.range = csize.u64;
+
+                bufferMemBarrier.buffer = bufferInfo.buffer;
+                bufferMemBarrier.size = csize.u64;
+                bufferMemBarrier.offset = coffset.u64;
+                bufferMem.push_back(bufferMemBarrier);
+                descSetWrite.dstBinding = lB->binding();
                 context.device.updateDescriptorSets(descSetWrite, {});
             }
             vk::DescriptorSetLayoutCreateInfo descrip({}, layoutBindings);
@@ -321,15 +359,35 @@ inline UNetLoader loadUNet(MainContext& context) {
 
         std::vector<uint8_t> pushValues(range.size);
         for (const auto f : *pConst.fields()) {
-            RESOLVE_LOCAL(f, source, vk::DeviceSize);
-            
+            RESOLVE_LOCAL(f, source);
+
             const auto sizeOfPush = byteSizeOf(f->dtype());
             const auto offset = f->offset();
             memcpy(pushValues.data() + offset, &csource, sizeOfPush);
         }
         loader.cmd.pushConstants(layout, vk::ShaderStageFlagBits::eCompute, 0, pushValues.size(), pushValues.data());
         loader.pushData.emplace_back(std::move(pushValues));
+
+        RESOLVE_LOCAL(disp, workgroup_count_x);
+        RESOLVE_LOCAL(disp, workgroup_count_y);
+        RESOLVE_LOCAL(disp, workgroup_count_z);
+        loader.cmd.dispatch(cworkgroup_count_x.u32, cworkgroup_count_y.u32, cworkgroup_count_z.u32);
+
+        loader.cmd.pipelineBarrier2(vk::DependencyInfo({}, {}, bufferMem));
     }
+    const auto& outputs = *model->inputs();
+    const auto outTensor = tensors[outputs[0]];
+    
+    const auto outBuffer = loader.buffer[outTensor->buffer()];
+    loader.cmd.copyBufferToImage(outBuffer, inOut, vk::ImageLayout::eGeneral, bufferImageCopy);
+    vk::ImageMemoryBarrier2 imageBarrier(vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+        vk::PipelineStageFlagBits2::eAllCommands,
+        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+        vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, {}, {},
+        inOut, vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
+    loader.cmd.pipelineBarrier2(vk::DependencyInfo({}, {}, {}, imageBarrier));
+
     loader.cmd.end();
     return loader;
 }
@@ -1810,7 +1868,6 @@ int main()
     std::vector<const char*> deviceExtensions = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME,
                             VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME, VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME };
     // VK_KHR_ray_tracing_pipeline_maintainence?
-    vk::PhysicalDeviceDynamicRenderingFeatures dynamicFeature(true);
     vk::PhysicalDeviceFeatures2 physicalDeviceFeatures;
     physicalDeviceFeatures.features.fillModeNonSolid = true;
     physicalDeviceFeatures.features.shaderFloat64 = true;
@@ -1823,8 +1880,7 @@ int main()
     accelFeaturesInfo.accelerationStructure = true;
     accelFeaturesInfo.accelerationStructureCaptureReplay = true;
     accelFeaturesInfo.descriptorBindingAccelerationStructureUpdateAfterBind = true;
-    physicalDeviceFeatures.pNext = &dynamicFeature;
-    dynamicFeature.pNext = &accelFeaturesInfo;
+    physicalDeviceFeatures.pNext = &accelFeaturesInfo;
     accelFeaturesInfo.pNext = &rayTracingPipelineFeatures;
     const auto exts = enableUNetReqs(context, &rayTracingPipelineFeatures.pNext);
     for (const auto e : exts) deviceExtensions.push_back(e);
