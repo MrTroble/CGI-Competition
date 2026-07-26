@@ -20,6 +20,12 @@ struct UNetLoader {
     std::vector<vk::DeviceMemory> memories;
     std::vector<vk::Buffer> buffer;
     std::vector<vk::ShaderModule> shader;
+    vk::DescriptorPool pool;
+
+    std::vector<vk::Pipeline> pipelines;
+    std::vector<vk::PipelineLayout> layouts;
+    std::vector<std::vector<vk::DescriptorSetLayout>> descLayouts;
+    std::vector<std::vector<vk::DescriptorSet>> descSets;
 };
 
 template<class T>
@@ -30,9 +36,9 @@ inline T resolveDNXScalar(const denox::dnx::ScalarLiteral* literal) {
     switch (type)
     {
     case ScalarType_I16:
-        return (T)*((const int16_t*)(literal->bytes()->data()));
+        return (T) * ((const int16_t*)(literal->bytes()->data()));
     case ScalarType_F16:
-        return (T)*((const uint16_t*)(literal->bytes()->data()));
+        return (T) * ((const uint16_t*)(literal->bytes()->data()));
     case ScalarType_U16:
         return (T) * ((const uint16_t*)(literal->bytes()->data()));
     case ScalarType_I32:
@@ -97,9 +103,9 @@ inline std::vector<const char*> enableUNetReqs(MainContext& context, void** pNex
 
     const auto& mInfo = *model->info();
     const auto& compInfo = *mInfo.compilation_info();
-    
+
     const auto& featComp = *compInfo.features();
-    
+
     static vk::PhysicalDeviceCooperativeMatrixFeaturesKHR coopMat;
     coopMat.cooperativeMatrix = true;
     static vk::PhysicalDeviceVulkan11Features f11;
@@ -112,10 +118,14 @@ inline std::vector<const char*> enableUNetReqs(MainContext& context, void** pNex
     f12.vulkanMemoryModel = true;
     f12.setShaderSampledImageArrayNonUniformIndexing(true);
     f11.pNext = &f12;
+    static vk::PhysicalDeviceSubgroupSizeControlFeatures subgroupFeat;
+    f12.pNext = &subgroupFeat;
+    subgroupFeat.subgroupSizeControl = true;
     *pNext = &f11;
-    pNext = &f12.pNext;
+    pNext = &subgroupFeat.pNext;
 
     std::vector<const char*> exts;
+    exts.push_back(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
     if (featComp.coopmat()) {
         *pNext = &coopMat;
         pNext = &coopMat.pNext;
@@ -208,6 +218,62 @@ inline UNetLoader loadUNet(MainContext& context) {
         vk::ShaderModuleCreateInfo shaderModCreate({}, spir->size() * sizeof(uint32_t), spir->data());
         const auto shaderMod = context.device.createShaderModule(shaderModCreate);
         loader.shader.push_back(shaderMod);
+    }
+
+    vk::DescriptorPoolSize descSize(vk::DescriptorType::eStorageBuffer, 100);
+    loader.pool = context.device.createDescriptorPool(vk::DescriptorPoolCreateInfo({}, 100, descSize));
+
+    const auto& dispatches = *model->dispatches();
+    vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo groupSize(32u);
+    for (const auto disp : dispatches) {
+        vk::PipelineShaderStageCreateInfo shaderStageCreateInfo({},
+            vk::ShaderStageFlagBits::eCompute, loader.shader[disp->binary_id()], disp->entry_point()->c_str());
+        shaderStageCreateInfo.pNext = &groupSize;
+        const auto& bindings = *disp->bindings();
+        std::vector<vk::DescriptorSetLayout> layoutsCreated;
+        for (const auto bind : bindings) {
+            std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+            const auto& localBind = *bind->bindings();
+            for (const auto lB : localBind) {
+                const auto& tensor = *tensors[lB->tensor()];
+                vk::DescriptorSetLayoutBinding layoutBinding(lB->binding(), vk::DescriptorType::eStorageBuffer, 1, vk::ShaderStageFlagBits::eCompute);
+                layoutBindings.push_back(layoutBinding);
+            }
+            vk::DescriptorSetLayoutCreateInfo descrip({}, layoutBindings);
+            layoutsCreated.push_back(context.device.createDescriptorSetLayout(descrip));
+        }
+        loader.descLayouts.push_back(layoutsCreated);
+        const auto& pConst = *disp->push_constant();
+        vk::PushConstantRange range(vk::ShaderStageFlagBits::eCompute, 0, pConst.size());
+        vk::PipelineLayoutCreateInfo pipeLayouteCreateInfo({}, layoutsCreated, range);
+        const auto layout = context.device.createPipelineLayout(pipeLayouteCreateInfo);
+        loader.layouts.push_back(layout);
+        vk::ComputePipelineCreateInfo computePipeCreate({}, shaderStageCreateInfo, layout);
+        const auto pipe = context.device.createComputePipeline({}, computePipeCreate);
+        loader.pipelines.push_back(pipe.value);
+
+        const auto descSet = context.device.allocateDescriptorSets(vk::DescriptorSetAllocateInfo(loader.pool, layoutsCreated));
+        loader.descSets.push_back(descSet);
+        
+        size_t counter = 0;
+        for (const auto bind : bindings) {
+            std::vector<vk::DescriptorSetLayoutBinding> layoutBindings;
+            const auto& localBind = *bind->bindings();
+            vk::DescriptorBufferInfo bufferInfo;
+            vk::WriteDescriptorSet descSetWrite(descSet[counter], 0, 0, vk::DescriptorType::eStorageBuffer, {}, bufferInfo);
+            for (const auto lB : localBind) {
+                const auto tensor = tensors[lB->tensor()];
+                RESOLVE_LOCAL(tensor, offset, vk::DeviceSize);
+                RESOLVE_LOCAL(tensor, size, vk::DeviceSize);
+                bufferInfo.buffer = loader.buffer[tensor->buffer()];
+                bufferInfo.offset = coffset;
+                bufferInfo.range = csize;
+                context.device.updateDescriptorSets(descSetWrite, {});
+            }
+            vk::DescriptorSetLayoutCreateInfo descrip({}, layoutBindings);
+            layoutsCreated.push_back(context.device.createDescriptorSetLayout(descrip));
+            counter++;
+        }
     }
     return loader;
 }
@@ -1705,7 +1771,7 @@ int main()
     dynamicFeature.pNext = &accelFeaturesInfo;
     accelFeaturesInfo.pNext = &rayTracingPipelineFeatures;
     const auto exts = enableUNetReqs(context, &rayTracingPipelineFeatures.pNext);
-    for(const auto e : exts) deviceExtensions.push_back(e);
+    for (const auto e : exts) deviceExtensions.push_back(e);
     vk::DeviceCreateInfo deviceCreateInfo({}, deviceQueueCreateInfo, {}, deviceExtensions);
     deviceCreateInfo.pNext = &physicalDeviceFeatures;
 
