@@ -127,13 +127,11 @@ vec3 sampleGGX(vec2 rand, vec3 normalCur, float roughness)
     float alpha = roughness * roughness;
     float alpha2 = alpha * alpha;
 
-
     float phi = 2.0 * M_PI * rand.x;
 
     float cosTheta = sqrt(
         (1.0 - rand.y) /
-        (1.0 + (alpha2 - 1.0) * rand.y)
-    );
+        (1.0 + (alpha2 - 1.0) * rand.y));
 
     float sinTheta = sqrt(max(0.0, 1.0 - cosTheta * cosTheta));
 
@@ -180,22 +178,14 @@ void main()
     payload.pos = cleanPos;
     payload.dir = normalize(getDirection(rngRndVec2(payload.random), normalCur));
 
-
     float metallic = roughMetal.y;
-    float roughness = roughMetal.x;
-    vec3 F0;
-    if(metallic > 0.0)
-    {
-       F0 = color.rgb;
-    }
-    else
-    {
-        float f0 = pow((mat.ior - 1.0) /(mat.ior + 1.0), 2.0);
-        F0 = vec3(f0) * color.rgb;
-    }
+    float roughness = pow(roughMetal.x, 6);
+
+    float f0 = pow((mat.ior - 1.0) / (mat.ior + 1.0), 2.0);
+    vec3 F0 = mix(vec3(f0), color.rgb, metallic);
     float cosTheta = clamp(dot(-gl_WorldRayDirectionEXT, normalCur),0.0,1.0);
     vec3 F = F0 + (1.0 - F0) * pow(1.0 - cosTheta, 5.0);
-    float specChance = clamp(max(max(F.r,F.g),F.b),0.05,0.95);
+    float specChance = max(max(F.r,F.g),F.b);
     float r = rngRndFloat(payload.random);
 
     //-----------------
@@ -213,32 +203,22 @@ void main()
         return;
          }
 
-
-        //-----------------
-        //  Reflexion kaputt Hilfe!
-        //-----------------
-       vec3 H = sampleGGX(rngRndVec2(payload.random), normalCur, roughness);
-       vec3 L = reflect(gl_WorldRayDirectionEXT, H);
-       L = normalize(L);
-       float NoL = dot(normalCur, L);
-       if(NoL <= 0.0)
-        {
+      vec3 H = sampleGGX(rngRndVec2(payload.random), normalCur, roughness);
+      vec3 L = reflect(gl_WorldRayDirectionEXT, H);
+      L = normalize(L);
+      float NoL = dot(normalCur, L);
+      if(NoL <= 0.0)
+      {
          payload.contribution = vec3(0.0);
          return;
-        }
-       float NoV = max(dot(normalCur, -gl_WorldRayDirectionEXT), 0.0001);
-       float NoH = max(dot(normalCur, H), 0.0001);
+      }
        float VoH = max(dot(-gl_WorldRayDirectionEXT, H), 0.0001);
        float alpha = roughness * roughness;
-       float alpha2 = alpha * alpha;
-       float denom = NoH * NoH * (alpha2 - 1.0) + 1.0;
-       float D = alpha2 / (M_PI * denom * denom);
-       float pdf = D * NoH / (4.0 * VoH);
+       float pdf = 1 / (4.0 * VoH);
        float G = GeoTerm(alpha, L, -gl_WorldRayDirectionEXT, normalCur, H);
-       vec3 brdf = F * D * G;
-       //vec3 brdf = getGGX( L,normalCur, roughMetal,color.xyz, mat.ior);
+       vec3 brdf = F * G;
        vec3 weight = brdf * NoL / pdf;
-
+     
       payload.contribution *= weight / specChance;
       payload.dir = L;
       return;
