@@ -79,6 +79,7 @@ struct Settings {
 	bool useShadowMaps = false;
 	bool useRayTracing = false;
 	bool accumulate = false;
+	bool denoise = false;
 
 	RenderTillingInfo baseTillingInfo;
 };

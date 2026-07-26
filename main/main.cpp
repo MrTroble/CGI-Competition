@@ -145,7 +145,6 @@ inline std::vector<const char*> enableUNetReqs(MainContext& context, void** pNex
     coopMat.cooperativeMatrix = true;
     static vk::PhysicalDeviceVulkan11Features f11;
     f11.storageBuffer16BitAccess = true;
-    f11.storageInputOutput16 = true;
     static vk::PhysicalDeviceVulkan12Features f12;
     f12.shaderFloat16 = true;
     f12.bufferDeviceAddress = true;
@@ -1302,7 +1301,7 @@ inline void createTLA(MainContext& context, std::span<const OutputModel> outMode
     }
 }
 
-inline void renderFrame(MainContext& context, std::span<const OutputModel> models) {
+inline void renderFrame(MainContext& context, std::span<const OutputModel> models, const UNetLoader& loader) {
     glfwPollEvents();
     if (glfwGetWindowAttrib(context.window, GLFW_ICONIFIED) != 0)
     {
@@ -1404,6 +1403,11 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
             { context.raytraceExt.imageSet[imageID % 2], context.raytraceExt.topLevelDescSet, context.raytraceExt.textureSet }, {});
         cmd.traceRaysKHR(context.raytraceExt.raygenRegion, context.raytraceExt.missRegion, context.raytraceExt.hitRegion,
             context.raytraceExt.callableRegion, context.currentExtent.width, context.currentExtent.height, 1, context.dynamicLoader);
+
+        if (s.denoise) {
+            cmd.executeCommands(loader.cmd);
+        }
+
         vk::ImageSubresourceLayers subresource(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
         vk::ImageCopy imageCopy(subresource, {}, subresource, {}, vk::Extent3D(context.currentExtent, 1.0f));
         cmd.copyImage(
@@ -1430,6 +1434,7 @@ inline void renderFrame(MainContext& context, std::span<const OutputModel> model
     ImGui::Checkbox("Show AO", &s.useAO);
     ImGui::Checkbox("Use ray tracing", &s.useRayTracing);
     ImGui::Checkbox("Accumulate", &s.accumulate);
+    ImGui::Checkbox("Denoise", &s.denoise);
     context.cameraNodeData.windowParameter.z = s.useAO ? 1.0f : 0.0f;
 
     ImGui::SliderInt3("Tiling", (int*)&s.baseTillingInfo.xAmount, 1, MAX_TILLING);
@@ -1921,7 +1926,7 @@ int main()
     createSwapchain(context);
     createCommandBuffer(context);
     createDescriptorSetLayout(context);
-    loadUNet(context);
+    const auto unet = loadUNet(context);
 
     context.cameraNodeData.windowParameter.x = (float)context.currentExtent.width;
     context.cameraNodeData.windowParameter.y = (float)context.currentExtent.height;
@@ -1957,10 +1962,10 @@ int main()
         updateMemory(context, context.cameraNode.memory, std::span{ (uint8_t*)&context.cameraNodeData, sizeof(context.cameraNodeData) });
 
         if (context.settings.showLights) {
-            renderFrame(context, std::span{ models.begin(), models.size() });
+            renderFrame(context, std::span{ models.begin(), models.size() }, unet);
         }
         else {
-            renderFrame(context, std::span{ &models[0], 1u });
+            renderFrame(context, std::span{ &models[0], 1u }, unet);
         }
     }
 
