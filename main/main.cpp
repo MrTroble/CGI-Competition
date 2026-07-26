@@ -322,8 +322,8 @@ inline UNetLoader loadUNet(MainContext& context) {
         std::vector<uint8_t> pushValues(range.size);
         for (const auto f : *pConst.fields()) {
             RESOLVE_LOCAL(f, source, vk::DeviceSize);
-            const auto sizeOfPush = f->source_type() == ScalarSource_literal ?
-                byteSizeOf(f->source_as_literal()->dtype()) : sizeof(int64_t);
+            
+            const auto sizeOfPush = byteSizeOf(f->dtype());
             const auto offset = f->offset();
             memcpy(pushValues.data() + offset, &csource, sizeOfPush);
         }
