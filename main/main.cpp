@@ -161,7 +161,6 @@ inline std::vector<const char*> enableUNetReqs(MainContext& context, void** pNex
     pNext = &f13.pNext;
 
     std::vector<const char*> exts;
-    exts.push_back(VK_EXT_SUBGROUP_SIZE_CONTROL_EXTENSION_NAME);
     if (featComp.coopmat()) {
         *pNext = &coopMat;
         pNext = &coopMat.pNext;
@@ -269,17 +268,16 @@ inline UNetLoader loadUNet(MainContext& context) {
     const auto& inputs = *model->inputs();
 
     const auto inTensor = tensors[inputs[0]];
-    const auto inOut = context.resolve1Image;
+    const auto inOut = context.swapchainImages[0];
 
-    vk::BufferMemoryBarrier2 bufferMemBarrier(vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite);
+    vk::BufferMemoryBarrier2 bufferMemBarrierInit(vk::PipelineStageFlagBits2::eTransfer | vk::PipelineStageFlagBits2::eCopy,
+        vk::AccessFlagBits2::eTransferWrite,
+        vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eCopy,
+        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eTransferRead);
 
     vk::BufferImageCopy bufferImageCopy;
     {
-        const auto inputBuffer = loader.buffer[inTensor->buffer()];
-        vk::DependencyInfo depsInfo({}, {}, bufferMemBarrier);
+        const auto inputBuffer = loader.buffer[inTensor->buffer()]; | vk::AccessFlagBits2::eTransferRead
         RESOLVE_LOCAL(inTensor, offset);
         bufferImageCopy.bufferOffset = coffset.u64;
         bufferImageCopy.bufferRowLength = context.currentExtent.width;
@@ -287,11 +285,16 @@ inline UNetLoader loadUNet(MainContext& context) {
         bufferImageCopy.imageExtent = vk::Extent3D{ context.currentExtent, 1u};
         bufferImageCopy.imageSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor,0,0,1);
         loader.cmd.copyImageToBuffer(inOut, vk::ImageLayout::eGeneral, inputBuffer, bufferImageCopy);
-        bufferMemBarrier.buffer = inputBuffer; 
-        bufferMemBarrier.size = VK_WHOLE_SIZE;
-        bufferMemBarrier.offset = coffset.u64;
-        loader.cmd.pipelineBarrier2(depsInfo);
+        bufferMemBarrierInit.buffer = inputBuffer;
+        bufferMemBarrierInit.size = VK_WHOLE_SIZE;
+        bufferMemBarrierInit.offset = coffset.u64;
+        loader.cmd.pipelineBarrier2(vk::DependencyInfo({}, {}, bufferMemBarrierInit));
     }
+
+    vk::BufferMemoryBarrier2 bufferMemBarrier(vk::PipelineStageFlagBits2::eComputeShader,
+        vk::AccessFlagBits2::eShaderWrite,
+        vk::PipelineStageFlagBits2::eComputeShader | vk::PipelineStageFlagBits2::eCopy,
+        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eTransferRead);
 
     const auto& dispatches = *model->dispatches();
     vk::PipelineShaderStageRequiredSubgroupSizeCreateInfo groupSize(32u);
@@ -379,10 +382,10 @@ inline UNetLoader loadUNet(MainContext& context) {
     
     const auto outBuffer = loader.buffer[outTensor->buffer()];
     loader.cmd.copyBufferToImage(outBuffer, inOut, vk::ImageLayout::eGeneral, bufferImageCopy);
-    vk::ImageMemoryBarrier2 imageBarrier(vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
-        vk::PipelineStageFlagBits2::eAllCommands,
-        vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+    vk::ImageMemoryBarrier2 imageBarrier(vk::PipelineStageFlagBits2::eCopy,
+        vk::AccessFlagBits2::eTransferWrite,
+        vk::PipelineStageFlagBits2::eTransfer,
+        vk::AccessFlagBits2::eTransferRead,
         vk::ImageLayout::eGeneral, vk::ImageLayout::eGeneral, {}, {},
         inOut, vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
     loader.cmd.pipelineBarrier2(vk::DependencyInfo({}, {}, {}, imageBarrier));
