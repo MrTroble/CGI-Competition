@@ -24,6 +24,8 @@ struct UNetLoader {
     vk::CommandPool cmdPool;
     vk::CommandBuffer cmd;
 
+    DataBuffer resolveBuffer;
+
     std::vector<vk::Pipeline> pipelines;
     std::vector<vk::PipelineLayout> layouts;
     std::vector<std::vector<vk::DescriptorSetLayout>> descLayouts;
@@ -234,6 +236,9 @@ inline UNetLoader loadUNet(MainContext& context) {
         context.device.bindBufferMemory(currentBuffer, mem, 0);
     }
 
+    std::vector<glm::vec4> resolve(context.currentExtent.width * context.currentExtent.height * 3);
+    loader.resolveBuffer = createBuffer<glm::vec4>(context, resolve, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eTransferSrc);
+
     const auto& tensorInits = *model->initializers();
     const auto& tensors = *model->tensors();
     for (const auto init : tensorInits) {
@@ -279,12 +284,34 @@ inline UNetLoader loadUNet(MainContext& context) {
     {
         const auto inputBuffer = loader.buffer[inTensor->buffer()];
         RESOLVE_LOCAL(inTensor, offset);
-        bufferImageCopy.bufferOffset = coffset.u64;
-        bufferImageCopy.bufferRowLength = context.currentExtent.width;
-        bufferImageCopy.bufferImageHeight = context.currentExtent.height;
-        bufferImageCopy.imageExtent = vk::Extent3D{ context.currentExtent, 1u};
-        bufferImageCopy.imageSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor,0,0,1);
-        loader.cmd.copyImageToBuffer(inOut, vk::ImageLayout::eGeneral, inputBuffer, bufferImageCopy);
+        bufferImageCopy.bufferOffset = 0;
+        bufferImageCopy.bufferRowLength = 0;
+        bufferImageCopy.bufferImageHeight = 0;
+        bufferImageCopy.imageExtent = vk::Extent3D{ context.currentExtent, 1 };
+        bufferImageCopy.imageSubresource = vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1);
+
+        loader.cmd.copyImageToBuffer(inOut, vk::ImageLayout::eGeneral, loader.resolveBuffer.buffer, bufferImageCopy);
+        bufferMemBarrierInit.buffer = loader.resolveBuffer.buffer;
+        bufferMemBarrierInit.size = VK_WHOLE_SIZE;
+        bufferMemBarrierInit.offset = 0;
+        loader.cmd.pipelineBarrier2(vk::DependencyInfo({}, {}, bufferMemBarrierInit));
+
+        vk::BufferCopy bufferCopy;
+        std::vector<vk::BufferCopy> resolveCopy;
+        for (size_t x = 0; x < context.currentExtent.width; x++)
+        {
+            for (size_t y = 0; y < context.currentExtent.height; y++)
+            {
+                bufferCopy.srcOffset = (context.currentExtent.width * y + x) * 4;
+                bufferCopy.size = 3;
+                bufferCopy.dstOffset = coffset.u64 + (context.currentExtent.height * x + y) * 3;
+                resolveCopy.push_back(bufferCopy);
+            }
+        }
+        //loader.cmd.fillBuffer(loader.resolveBuffer.buffer, 0, VK_WHOLE_SIZE, 0xFF);
+
+        loader.cmd.copyBuffer(loader.resolveBuffer.buffer, inputBuffer, resolveCopy);
+
         bufferMemBarrierInit.buffer = inputBuffer;
         bufferMemBarrierInit.size = VK_WHOLE_SIZE;
         bufferMemBarrierInit.offset = coffset.u64;
@@ -377,11 +404,40 @@ inline UNetLoader loadUNet(MainContext& context) {
 
         loader.cmd.pipelineBarrier2(vk::DependencyInfo({}, {}, bufferMem));
     }
-    const auto& outputs = *model->inputs();
+    const auto& outputs = *model->outputs();
     const auto outTensor = tensors[outputs[0]];
     
+    RESOLVE_LOCAL(outTensor, offset);
     const auto outBuffer = loader.buffer[outTensor->buffer()];
-    loader.cmd.copyBufferToImage(outBuffer, inOut, vk::ImageLayout::eGeneral, bufferImageCopy);
+
+    vk::BufferCopy bufferCopy;
+    std::vector<vk::BufferCopy> resolveCopy;
+    for (size_t x = 0; x < context.currentExtent.width; x++)
+    {
+        for (size_t y = 0; y < context.currentExtent.height; y++)
+        {
+            bufferCopy.srcOffset = coffset.u64 + (context.currentExtent.height * x + y) * 3;
+            bufferCopy.size = 3;
+            bufferCopy.dstOffset = (context.currentExtent.width * y + x) * 4;
+            resolveCopy.push_back(bufferCopy);
+        }
+    }
+    //loader.cmd.fillBuffer(loader.resolveBuffer.buffer, 0, VK_WHOLE_SIZE, 0xFF);
+
+    loader.cmd.copyBuffer(outBuffer, loader.resolveBuffer.buffer, resolveCopy);
+
+    bufferMemBarrierInit.buffer = loader.resolveBuffer.buffer;
+    bufferMemBarrierInit.size = VK_WHOLE_SIZE;
+    bufferMemBarrierInit.offset = 0;
+    loader.cmd.pipelineBarrier2(vk::DependencyInfo({}, {}, bufferMemBarrierInit));
+
+    bufferImageCopy.bufferOffset = 0;
+    bufferImageCopy.bufferRowLength = 0;
+    bufferImageCopy.bufferImageHeight = 0;
+    bufferImageCopy.imageExtent = vk::Extent3D{ context.currentExtent, 1 };
+    bufferImageCopy.imageOffset.x = 0;
+    bufferImageCopy.imageOffset.y = 0;
+    loader.cmd.copyBufferToImage(loader.resolveBuffer.buffer, inOut, vk::ImageLayout::eGeneral, bufferImageCopy);
     vk::ImageMemoryBarrier2 imageBarrier(vk::PipelineStageFlagBits2::eCopy,
         vk::AccessFlagBits2::eTransferWrite,
         vk::PipelineStageFlagBits2::eTransfer,
